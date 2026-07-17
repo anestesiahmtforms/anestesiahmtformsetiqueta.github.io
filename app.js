@@ -2,7 +2,7 @@ const CONFIG = {
   storageKey: "etiqueta-hmt-registros-v1",
   guideWidthRatio: 0.94,
   guideAspectRatio: 3.35,
-  defaultScriptUrl: "",
+  defaultScriptUrl: "https://script.google.com/macros/s/AKfycbzWwukthNK5OP2itdkJ9tNR-4TZg5IfoORA8q1ke0KpLkCkKklZQJyxEpiEH0mjY0gn0w/exec",
 };
 
 const ZONES = {

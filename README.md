@@ -56,6 +56,14 @@ Data | Nome do Paciente | Registro | Tipo | Credor | Plantonista(s) | Observa√ß√
 
 ## Como ativar o envio real
 
+O Web App do Apps Script ja esta implantado em:
+
+```text
+https://script.google.com/macros/s/AKfycbzWwukthNK5OP2itdkJ9tNR-4TZg5IfoORA8q1ke0KpLkCkKklZQJyxEpiEH0mjY0gn0w/exec
+```
+
+Essa URL ja esta configurada como padrao no PWA.
+
 1. Abra a planilha `Registros de Etiquetas`.
 2. Va em `Extensoes > Apps Script`.
 3. Cole o conteudo de `apps-script/Code.gs`.
@@ -65,7 +73,7 @@ Data | Nome do Paciente | Registro | Tipo | Credor | Plantonista(s) | Observa√ß√
 7. Em `Executar como`, use `Voce`.
 8. Em acesso, escolha uma opcao que permita o uso do app.
 9. Copie a URL final `/exec`.
-10. No PWA, cole essa URL no campo `URL do Google Apps Script Web App` e salve.
+10. Se for uma nova implantacao, no PWA cole essa nova URL no campo `URL do Google Apps Script Web App` e salve.
 
 ## Publicacao no GitHub Pages
 

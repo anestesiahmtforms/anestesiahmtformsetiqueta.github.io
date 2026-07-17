@@ -6,7 +6,7 @@ const CONFIG = {
 };
 
 const ZONES = {
-  nome: { x: 0.02, y: 0.16, width: 0.55, height: 0.16 },
+  nome: { x: 0.02, y: 0.17, width: 0.43, height: 0.105 },
   registro: { x: 0.58, y: 0.35, width: 0.34, height: 0.34 },
 };
 
@@ -467,7 +467,7 @@ function parseLabelData(rawText, barcodeValues, fixedZones = {}) {
     .filter(Boolean);
 
   return {
-    nomePaciente: chooseNameCandidate(fixedZones.nomePaciente, lines),
+    nomePaciente: chooseNameCandidate(fixedZones.nomePaciente),
     registro: chooseRegistroCandidate(fixedZones.registro, lines, barcodeValues),
   };
 }
@@ -481,19 +481,9 @@ function normalizeText(text) {
     .replace(/[^\S\r\n]+/g, " ");
 }
 
-function chooseNameCandidate(zoneValue, lines) {
+function chooseNameCandidate(zoneValue) {
   const zone = cleanNameCandidate(zoneValue);
-  const byLine = inferNomeFromLines(lines);
-
-  if (isGoodNameCandidate(zone)) {
-    return zone;
-  }
-
-  if (isGoodNameCandidate(byLine)) {
-    return byLine;
-  }
-
-  return zone || byLine;
+  return isGoodNameCandidate(zone) ? zone : "";
 }
 
 function chooseRegistroCandidate(zoneValue, lines, barcodeValues) {
@@ -510,17 +500,6 @@ function chooseRegistroCandidate(zoneValue, lines, barcodeValues) {
   return cleanRegistroCandidate(inferRegistroFromText(lines));
 }
 
-function inferNomeFromLines(lines) {
-  const ignored = /Hospital|Ipmm|Data\s*Nasc|Mae:|Mãe:|Entrada:|Setor:|Medico:|M[eé]dico:|Convenio:|Convênio:|Filme/i;
-  const candidates = lines
-    .filter((line) => !ignored.test(line))
-    .map(cleanNameCandidate)
-    .filter(isGoodNameCandidate)
-    .sort((a, b) => b.length - a.length);
-
-  return candidates[0] || "";
-}
-
 function inferRegistroFromText(lines) {
   const ignored = /Data\s*Nasc|Entrada|Mae|Mãe|Setor|Medico|M[eé]dico|Convenio|Convênio|Filme/i;
   const numbers = lines
@@ -530,8 +509,15 @@ function inferRegistroFromText(lines) {
 }
 
 function cleanNameCandidate(value) {
-  return String(value || "")
+  const firstNameLine = String(value || "")
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .find((line) => !/Hospital|Ipmm|Data\s*Nasc|Mae:|Mãe:|Entrada:|Setor:|Medico:|M[eé]dico:|Convenio:|Convênio|Filme/i.test(line)) || "";
+
+  return firstNameLine
     .replace(/\bIpmm[i1]?\b.*$/i, "")
+    .replace(/\b(Data\s*Nasc|Mae|Mãe|Entrada|Setor|Medico|M[eé]dico|Convenio|Convênio|Filme)\b.*$/i, "")
     .replace(/[^A-Za-zÀ-ÿ\s]/g, " ")
     .replace(/\s{2,}/g, " ")
     .trim()

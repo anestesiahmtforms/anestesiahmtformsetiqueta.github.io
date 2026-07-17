@@ -568,7 +568,7 @@ function collectFormData() {
     registro: fields.registro.value.trim(),
     tipo: fields.tipo.value.trim(),
     credor: fields.credor.value.trim(),
-    plantonistas: Array.from(fields.plantonistas.selectedOptions).map((option) => option.value).join(", "),
+    plantonistas: fields.plantonistas.value.trim(),
     observacoes: fields.observacoes.value.trim(),
     userAgent: navigator.userAgent,
   };

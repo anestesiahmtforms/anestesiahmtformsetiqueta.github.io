@@ -320,10 +320,6 @@ select {
   background: white;
 }
 
-select[multiple] {
-  min-height: 174px;
-}
-
 textarea {
   resize: vertical;
 }

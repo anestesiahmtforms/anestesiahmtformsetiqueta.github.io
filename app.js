@@ -11,6 +11,7 @@ const ZONES = {
 };
 
 const ALERT_TYPES = new Set(["particular", "complementacao", "complementação"]);
+const CAIXA_TOTAL = "Caixa TOTAL";
 
 const state = {
   stream: null,
@@ -31,6 +32,7 @@ const sheetStatusEl = document.querySelector("#sheet-status");
 const scriptUrlEl = document.querySelector("#script-url");
 const formEl = document.querySelector("#label-form");
 const summaryDateEl = document.querySelector("#summary-date");
+const reportMonthEl = document.querySelector("#report-month");
 const summaryTotalsEl = document.querySelector("#summary-totals");
 const summaryListEl = document.querySelector("#summary-list");
 
@@ -53,7 +55,9 @@ document.querySelector("#clear-form").addEventListener("click", resetForm);
 document.querySelector("#save-settings").addEventListener("click", saveSettings);
 document.querySelector("#load-summary").addEventListener("click", loadSummary);
 document.querySelector("#generate-pdf").addEventListener("click", generatePdfReport);
+document.querySelector("#generate-month-pdf-whatsapp").addEventListener("click", generateMonthlyPdfForWhatsApp);
 summaryDateEl.addEventListener("change", loadSummary);
+fields.credor.addEventListener("change", syncPlantonistasRequirement);
 
 bootstrap();
 
@@ -61,7 +65,9 @@ async function bootstrap() {
   const today = getTodayISO();
   fields.data.value = today;
   summaryDateEl.value = today;
+  reportMonthEl.value = today.slice(0, 7);
   scriptUrlEl.value = state.config.scriptUrl;
+  syncPlantonistasRequirement();
   renderSheetStatus();
   await loadMetadata();
   await loadSummary({ silent: true });
@@ -562,13 +568,14 @@ function applyDataToForm(data) {
 }
 
 function collectFormData() {
+  const isCaixaTotal = fields.credor.value.trim() === CAIXA_TOTAL;
   return {
     data: fields.data.value,
     nomePaciente: fields.nomePaciente.value.trim(),
     registro: fields.registro.value.trim(),
     tipo: fields.tipo.value.trim(),
     credor: fields.credor.value.trim(),
-    plantonistas: fields.plantonistas.value.trim(),
+    plantonistas: isCaixaTotal ? "" : fields.plantonistas.value.trim(),
     observacoes: fields.observacoes.value.trim(),
     userAgent: navigator.userAgent,
   };
@@ -581,9 +588,14 @@ async function sendToSheet() {
   }
 
   const payload = collectFormData();
-  const missing = ["data", "nomePaciente", "registro", "tipo", "credor", "plantonistas"].filter((key) => !payload[key]);
+  const requiredFields = ["data", "nomePaciente", "registro", "tipo", "credor"];
+  if (payload.credor !== CAIXA_TOTAL) {
+    requiredFields.push("plantonistas");
+  }
+
+  const missing = requiredFields.filter((key) => !payload[key]);
   if (missing.length) {
-    setStatus("Preencha Data, Nome, Registro, Tipo, Credor e Plantonista(s) antes de enviar.", "error");
+    setStatus("Preencha Data, Nome, Registro, Tipo, Credor e Plantonista(s) quando necessario antes de enviar.", "error");
     return;
   }
 
@@ -595,7 +607,7 @@ async function sendToSheet() {
     `Registro: ${payload.registro}`,
     `Tipo: ${payload.tipo}`,
     `Credor: ${payload.credor}`,
-    `Plantonista(s): ${payload.plantonistas}`,
+    `Plantonista(s): ${payload.plantonistas || "Nao necessario"}`,
     "",
     "Enviar agora?",
   ].join("\n");
@@ -698,6 +710,24 @@ function renderSummary(rows, emptyMessage = "Nenhum registro encontrado nesta da
   }).join("");
 }
 
+async function loadMonthlyEntries(month) {
+  if (!state.config.scriptUrl) {
+    throw new Error("Configure a URL do Apps Script antes de gerar o relatorio mensal.");
+  }
+
+  const url = new URL(state.config.scriptUrl);
+  url.searchParams.set("action", "summaryMonth");
+  url.searchParams.set("month", month);
+  const response = await fetch(url.toString(), { method: "GET" });
+  const result = await response.json();
+
+  if (!response.ok || result.ok !== true) {
+    throw new Error(result.message || "Falha ao carregar registros do mes.");
+  }
+
+  return result.entries || [];
+}
+
 function generatePdfReport() {
   if (!state.summaryRows.length) {
     setStatus("Carregue um resumo com entradas antes de gerar o PDF.", "error");
@@ -762,10 +792,123 @@ function generatePdfReport() {
   doc.save(`etiquetas-hmt-${date}.pdf`);
 }
 
+async function generateMonthlyPdfForWhatsApp() {
+  const month = reportMonthEl.value || getTodayISO().slice(0, 7);
+  toggleBusy(true);
+  setStatus("Gerando relatorio mensal em PDF...", "info");
+
+  try {
+    const rows = await loadMonthlyEntries(month);
+    if (!rows.length) {
+      setStatus("Nenhum registro encontrado para o mes selecionado.", "error");
+      return;
+    }
+
+    const { blob, fileName, summaryText } = buildMonthlyPdf(rows, month);
+    const file = new File([blob], fileName, { type: "application/pdf" });
+
+    if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+      await navigator.share({
+        files: [file],
+        title: `ETIQUETAS HMT - ${formatMonth(month)}`,
+        text: summaryText,
+      });
+      setStatus("Relatorio mensal pronto para envio pelo WhatsApp.", "success");
+      return;
+    }
+
+    downloadBlob(blob, fileName);
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(summaryText + "\n\nPDF gerado e baixado no aparelho. Anexe o arquivo baixado nesta conversa.")}`;
+    window.open(whatsappUrl, "_blank", "noopener");
+    setStatus("PDF baixado. O WhatsApp foi aberto com a mensagem do relatorio.", "success");
+  } catch (error) {
+    setStatus(`Falha ao gerar relatorio mensal: ${error.message}`, "error");
+  } finally {
+    toggleBusy(false);
+  }
+}
+
+function buildMonthlyPdf(rows, month) {
+  const jsPdf = window.jspdf?.jsPDF;
+  if (!jsPdf) {
+    throw new Error("Biblioteca de PDF nao carregada.");
+  }
+
+  const doc = new jsPdf({ orientation: "landscape", unit: "mm", format: "a4" });
+  const title = `ETIQUETAS HMT - RELATORIO MENSAL - ${formatMonth(month)}`;
+  const alertCount = rows.filter((row) => isAlertType(row.tipo)).length;
+  const tableRows = rows.map((row, index) => [
+    String(index + 1),
+    formatDate(row.data || ""),
+    row.nomePaciente || "",
+    row.registro || "",
+    row.tipo || "",
+    row.credor || "",
+    row.plantonistas || "-",
+    row.observacoes || "",
+  ]);
+
+  doc.setFillColor(11, 63, 58);
+  doc.rect(0, 0, 297, 26, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(14);
+  doc.text(title, 14, 15);
+  doc.setFontSize(9);
+  doc.text(`${rows.length} entrada(s) | ${alertCount} alerta(s)`, 280, 15, { align: "right" });
+
+  doc.autoTable({
+    startY: 34,
+    head: [["#", "Data", "Nome do Paciente", "Registro", "Tipo", "Credor", "Plantonista(s)", "Observacoes"]],
+    body: tableRows,
+    theme: "grid",
+    styles: { fontSize: 7.6, cellPadding: 2, overflow: "linebreak", valign: "middle" },
+    headStyles: { fillColor: [11, 63, 58], textColor: [255, 255, 255], fontStyle: "bold" },
+    columnStyles: {
+      0: { cellWidth: 9 },
+      1: { cellWidth: 20 },
+      2: { cellWidth: 58 },
+      3: { cellWidth: 22 },
+      4: { cellWidth: 28 },
+      5: { cellWidth: 40 },
+      6: { cellWidth: 31 },
+      7: { cellWidth: 66 },
+    },
+    didParseCell(data) {
+      if (data.section === "body") {
+        const row = rows[data.row.index];
+        if (isAlertType(row?.tipo)) {
+          data.cell.styles.textColor = [185, 28, 28];
+          data.cell.styles.fontStyle = "bold";
+          data.cell.styles.fillColor = [255, 241, 242];
+        }
+      }
+    },
+  });
+
+  const fileName = `etiquetas-hmt-${month}.pdf`;
+  return {
+    blob: doc.output("blob"),
+    fileName,
+    summaryText: `ETIQUETAS HMT - ${formatMonth(month)}\n${rows.length} entrada(s)\n${alertCount} alerta(s): Particular/Complementacao`,
+  };
+}
+
+function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1200);
+}
+
 function resetForm(options = {}) {
   const selectedDate = options.keepDate || fields.data.value || getTodayISO();
   formEl.reset();
   fields.data.value = options.keepDate ? selectedDate : getTodayISO();
+  syncPlantonistasRequirement();
 
   if (!options.keepImage) {
     clearImage();
@@ -800,11 +943,22 @@ function toggleBusy(isBusy) {
   if (!isBusy) {
     document.querySelector("#capture-image").disabled = !state.stream;
     document.querySelector("#process-image").disabled = !state.imageBlob;
+    syncPlantonistasRequirement();
   }
 }
 
 function isAlertType(value) {
   return ALERT_TYPES.has(String(value || "").trim().toLowerCase());
+}
+
+function syncPlantonistasRequirement() {
+  const isCaixaTotal = fields.credor.value.trim() === CAIXA_TOTAL;
+  fields.plantonistas.disabled = isCaixaTotal;
+  fields.plantonistas.required = !isCaixaTotal;
+
+  if (isCaixaTotal) {
+    fields.plantonistas.value = "";
+  }
 }
 
 function getTodayISO() {
@@ -819,6 +973,14 @@ function formatDate(value) {
   }
   const [year, month, day] = value.split("-");
   return `${day}/${month}/${year}`;
+}
+
+function formatMonth(value) {
+  if (!value) {
+    return "";
+  }
+  const [year, month] = value.split("-");
+  return `${month}/${year}`;
 }
 
 function escapeHtml(value) {

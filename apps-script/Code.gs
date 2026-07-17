@@ -47,6 +47,15 @@ function doGet(e) {
       });
     }
 
+    if (action === "summaryMonth") {
+      const month = String(e.parameter.month || "").trim();
+      return jsonResponse({
+        ok: true,
+        month,
+        entries: getEntriesByMonth_(month),
+      });
+    }
+
     return jsonResponse({
       ok: true,
       message: "ETIQUETAS HMT API online.",
@@ -154,7 +163,11 @@ function formatRegistros_(sheet) {
 }
 
 function validatePayload_(payload) {
-  const required = ["data", "nomePaciente", "registro", "tipo", "credor", "plantonistas"];
+  const required = ["data", "nomePaciente", "registro", "tipo", "credor"];
+  if (payload.credor !== "Caixa TOTAL") {
+    required.push("plantonistas");
+  }
+
   const missing = required.filter((key) => !String(payload[key] || "").trim());
 
   if (missing.length) {
@@ -176,6 +189,32 @@ function getEntriesByDate_(date) {
   const values = sheet.getRange(2, 1, lastRow - 1, REGISTROS_HEADERS.length).getDisplayValues();
   return values
     .filter((row) => normalizeDate_(row[0]) === date)
+    .map((row) => ({
+      data: normalizeDate_(row[0]),
+      nomePaciente: row[1],
+      registro: row[2],
+      tipo: row[3],
+      credor: row[4],
+      plantonistas: row[5],
+      observacoes: row[6],
+      criadoEm: row[7],
+    }));
+}
+
+function getEntriesByMonth_(month) {
+  const sheet = getSpreadsheet_().getSheetByName(REGISTROS_SHEET);
+  if (!sheet) {
+    return [];
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return [];
+  }
+
+  const values = sheet.getRange(2, 1, lastRow - 1, REGISTROS_HEADERS.length).getDisplayValues();
+  return values
+    .filter((row) => normalizeDate_(row[0]).slice(0, 7) === month)
     .map((row) => ({
       data: normalizeDate_(row[0]),
       nomePaciente: row[1],

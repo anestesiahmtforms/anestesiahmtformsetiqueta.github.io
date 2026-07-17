@@ -18,7 +18,7 @@ O campo `Convenio` foi removido do app.
 - `Registro`, preenchido pelo scanner e editavel.
 - `Tipo`: `Particular`, `Complementação`, `Unimed`, `Outros`.
 - `Credor`: `Caixa TOTAL`, `50%:Caixa/Plantão:50%`, `Plantão TOTAL`.
-- `Plantonista(s)`: lista suspensa com as siglas definidas.
+- `Plantonista(s)`: lista suspensa com as siglas definidas. Quando `Credor` for `Caixa TOTAL`, o campo fica desativado porque nao e necessario.
 - `Observacoes`, opcional.
 
 Antes do envio, o app mostra uma confirmacao para conferencia dos dados.
@@ -27,7 +27,9 @@ Antes do envio, o app mostra uma confirmacao para conferencia dos dados.
 
 O app carrega o resumo da data selecionada. Entradas com `Particular` ou `Complementação` aparecem em vermelho no resumo e no PDF.
 
-O botao `Relatorio PDF` gera um arquivo em tabela para envio por WhatsApp.
+O botao `Relatorio PDF` gera um arquivo diario em tabela.
+
+O botao `PDF mensal no WhatsApp` gera um relatorio mensal em tabela, com selecao de mes. Em celulares compativeis, o app abre o compartilhamento do PDF para envio pelo WhatsApp. Quando o navegador nao permite compartilhar arquivo diretamente, o PDF e baixado e o WhatsApp abre com a mensagem do relatorio.
 
 ## Planilha Google
 

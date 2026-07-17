@@ -1,0 +1,19 @@
+{
+  "name": "ETIQUETAS HMT",
+  "short_name": "Etiquetas HMT",
+  "description": "PWA para ler Nome do Paciente e Registro em etiquetas HMT, registrar credor e gerar resumo em PDF.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#eef2ec",
+  "theme_color": "#0b3f3a",
+  "lang": "pt-BR",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Crect rx='24' width='128' height='128' fill='%230b3f3a'/%3E%3Cpath d='M18 33h92v13H18zm0 23h58v13H18zm0 23h92v13H18z' fill='%23fff'/%3E%3Cpath d='M80 56h8v36h-8zm14 0h5v36h-5zm9 0h7v36h-7z' fill='%23d99a24'/%3E%3C/svg%3E",
+      "sizes": "128x128",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

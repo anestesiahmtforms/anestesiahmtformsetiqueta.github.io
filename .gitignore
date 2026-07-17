@@ -1,0 +1,28 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local runtime artifacts
+node_modules/
+dist/
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env / secrets
+.env
+.env.*
+
+# Local tooling noise
+.vercel/
+.cache/
+
+# Delivery artifacts kept only on this machine
+etiqueta-pwa-github.zip
+etiqueta-pwa-github/

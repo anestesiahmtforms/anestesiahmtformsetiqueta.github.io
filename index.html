@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0b3f3a">
+  <title>ETIQUETAS HMT</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <span class="eyebrow">Hospital Madre Teresa</span>
+        <h1>ETIQUETAS HMT</h1>
+      </div>
+      <span id="sheet-status" class="status-pill neutral">Planilha nao configurada</span>
+    </header>
+
+    <main class="layout">
+      <section class="panel scanner-panel">
+        <div class="section-title">
+          <h2>Scanner</h2>
+          <span id="camera-status" class="status-pill neutral">Camera desligada</span>
+        </div>
+
+        <div class="camera-stage">
+          <video id="camera" playsinline muted></video>
+          <div class="guide-overlay" aria-hidden="true">
+            <div class="guide-frame">
+              <span>Nome na faixa superior esquerda</span>
+              <strong>Registro sob o codigo de barras</strong>
+            </div>
+          </div>
+        </div>
+
+        <canvas id="snapshot" hidden></canvas>
+
+        <div class="actions">
+          <button id="start-camera" type="button">Abrir camera</button>
+          <button id="capture-image" type="button" class="secondary" disabled>Capturar</button>
+          <label class="file-input">
+            <input id="upload-image" type="file" accept="image/*" capture="environment">
+            Escolher foto
+          </label>
+        </div>
+
+        <div class="preview-wrap">
+          <img id="preview" alt="Previa da etiqueta capturada">
+        </div>
+
+        <button id="process-image" type="button" class="wide-button" disabled>Ler etiqueta</button>
+        <p id="processing-status" class="hint">Alinhe a etiqueta inteira, com o codigo de barras a direita.</p>
+      </section>
+
+      <section class="panel form-panel">
+        <div class="section-title">
+          <h2>Entrada</h2>
+        </div>
+
+        <form id="label-form" class="form-grid">
+          <label class="full-width">
+            <span>Data</span>
+            <input id="data" name="data" type="date" required>
+          </label>
+
+          <label class="full-width">
+            <span>Nome do Paciente</span>
+            <input id="nomePaciente" name="nomePaciente" autocomplete="off" required>
+          </label>
+
+          <label>
+            <span>Registro</span>
+            <input id="registro" name="registro" inputmode="numeric" autocomplete="off" required>
+          </label>
+
+          <label>
+            <span>Tipo</span>
+            <select id="tipo" name="tipo" required>
+              <option value="">Selecione</option>
+              <option>Particular</option>
+              <option>Complementação</option>
+              <option>Unimed</option>
+              <option>Outros</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Credor</span>
+            <select id="credor" name="credor" required>
+              <option value="">Selecione</option>
+              <option>Caixa TOTAL</option>
+              <option>50%:Caixa/Plantão:50%</option>
+              <option>Plantão TOTAL</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Plantonista(s)</span>
+            <select id="plantonistas" name="plantonistas" multiple size="8" required>
+              <option>AD</option>
+              <option>AA</option>
+              <option>AL</option>
+              <option>BA</option>
+              <option>CH</option>
+              <option>CR</option>
+              <option>DE</option>
+              <option>DN</option>
+              <option>FL</option>
+              <option>FR</option>
+              <option>GU</option>
+              <option>GB</option>
+              <option>IG</option>
+              <option>JÁ</option>
+              <option>L2</option>
+              <option>LE</option>
+              <option>LD</option>
+              <option>LC</option>
+              <option>LH</option>
+              <option>LU</option>
+              <option>LA</option>
+              <option>LO</option>
+              <option>MA</option>
+              <option>MH</option>
+              <option>PR</option>
+              <option>RA</option>
+              <option>RL</option>
+              <option>RC</option>
+              <option>RO</option>
+              <option>RU</option>
+              <option>WE</option>
+            </select>
+            <small>Toque em um ou mais nomes.</small>
+          </label>
+
+          <label class="full-width">
+            <span>Observacoes</span>
+            <textarea id="observacoes" name="observacoes" rows="3" placeholder="Opcional"></textarea>
+          </label>
+        </form>
+
+        <div class="actions sticky-actions">
+          <button id="send-sheet" type="button">ENVIAR</button>
+          <button id="clear-form" type="button" class="secondary">Limpar</button>
+        </div>
+      </section>
+
+      <section class="panel summary-panel">
+        <div class="section-title">
+          <h2>Resumo do dia</h2>
+        </div>
+
+        <div class="summary-tools">
+          <label>
+            <span>Buscar data</span>
+            <input id="summary-date" type="date">
+          </label>
+          <button id="load-summary" type="button" class="secondary">Buscar resumo</button>
+          <button id="generate-pdf" type="button">Relatorio PDF</button>
+        </div>
+
+        <div id="summary-totals" class="summary-totals"></div>
+        <div id="summary-list" class="summary-list">
+          <p class="empty-state">Nenhum resumo carregado ainda.</p>
+        </div>
+      </section>
+
+      <section class="panel settings-panel">
+        <div class="section-title">
+          <h2>Integracao</h2>
+        </div>
+
+        <label>
+          <span>URL do Google Apps Script Web App</span>
+          <input id="script-url" type="url" placeholder="https://script.google.com/macros/s/.../exec">
+        </label>
+
+        <div class="actions">
+          <button id="save-settings" type="button" class="secondary">Salvar URL</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
+  <script src="./app.js" type="module"></script>
+</body>
+</html>

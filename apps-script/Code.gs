@@ -1,4 +1,5 @@
 const SPREADSHEET_NAME = "Registros de Etiquetas";
+const SPREADSHEET_ID = "1AUB4-Yl9lpS3TCgEBYMUwVDDuYQvj8suApPAJxifb8U";
 const REGISTROS_SHEET = "Registros";
 const LISTAS_SHEET = "Listas";
 const REGISTROS_HEADERS = [
@@ -65,7 +66,7 @@ function doPost(e) {
     const payload = JSON.parse((e.postData && e.postData.contents) || "{}");
     validatePayload_(payload);
 
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(REGISTROS_SHEET);
+    const sheet = getSpreadsheet_().getSheetByName(REGISTROS_SHEET);
     sheet.appendRow([
       payload.data || "",
       payload.nomePaciente || "",
@@ -91,7 +92,7 @@ function doPost(e) {
 }
 
 function ensureWorkbook_() {
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const spreadsheet = getSpreadsheet_();
   if (spreadsheet.getName() !== SPREADSHEET_NAME) {
     // O script tambem funciona em uma planilha com outro nome, mas informa o alvo correto ao app.
   }
@@ -162,7 +163,7 @@ function validatePayload_(payload) {
 }
 
 function getEntriesByDate_(date) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(REGISTROS_SHEET);
+  const sheet = getSpreadsheet_().getSheetByName(REGISTROS_SHEET);
   if (!sheet) {
     return [];
   }
@@ -185,6 +186,14 @@ function getEntriesByDate_(date) {
       observacoes: row[6],
       criadoEm: row[7],
     }));
+}
+
+function getSpreadsheet_() {
+  if (SPREADSHEET_ID) {
+    return SpreadsheetApp.openById(SPREADSHEET_ID);
+  }
+
+  return SpreadsheetApp.getActiveSpreadsheet();
 }
 
 function normalizeDate_(value) {

@@ -6,7 +6,7 @@ const CONFIG = {
 };
 
 const ZONES = {
-  nome: { x: 0.03, y: 0.11, width: 0.76, height: 0.13 },
+  nome: { x: 0.015, y: 0.08, width: 0.92, height: 0.20 },
   registro: { x: 0.55, y: 0.70, width: 0.38, height: 0.24 },
 };
 
@@ -406,13 +406,18 @@ async function extractBestText(variants) {
 }
 
 async function extractFixedZones(sourceCanvas, nameCanvas = sourceCanvas) {
-  const [nome, registro] = await Promise.all([
-    extractText(cropRelative(nameCanvas, ZONES.nome)),
+  const nameZone = cropRelative(nameCanvas, ZONES.nome);
+  const nameStrongZone = cloneCanvas(nameZone);
+  applyBinaryThreshold(nameStrongZone, 170);
+
+  const [nome, nomeStrong, registro] = await Promise.all([
+    extractText(nameZone),
+    extractText(nameStrongZone),
     extractText(cropRelative(sourceCanvas, ZONES.registro)),
   ]);
 
   return {
-    nomePaciente: cleanNameCandidate(nome.text),
+    nomePaciente: chooseBestZoneName([nome.text, nomeStrong.text]),
     registro: cleanRegistroCandidate(registro.text),
   };
 }
@@ -498,6 +503,15 @@ function chooseNameCandidate(zoneValue, lines) {
   return isGoodNameCandidate(zone) ? zone : "";
 }
 
+function chooseBestZoneName(values) {
+  const candidates = values
+    .map((value) => cleanNameFromNomePront(value) || cleanNameCandidate(value))
+    .filter(isGoodNameCandidate)
+    .sort((a, b) => scoreNameCandidate(b) - scoreNameCandidate(a));
+
+  return candidates[0] || "";
+}
+
 function chooseRegistroCandidate(zoneValue, lines, barcodeValues) {
   const zone = cleanRegistroCandidate(zoneValue);
   if (zone.length === 7) {
@@ -540,8 +554,8 @@ function cleanNameCandidate(value) {
 }
 
 function cleanNameFromNomePront(value) {
-  const text = normalizeText(value);
-  const match = text.match(/Nome\s*:\s*([A-Za-zÀ-ÿ\s]+?)\s+Pront\s*:/i);
+  const text = normalizeOcrLabelMarkers(value);
+  const match = text.match(/Nome\s*:\s*([A-Za-zÀ-ÿ\s]+?)\s+(?:Pront|Prontu|Pront\.?)\s*:/i);
   return match ? cleanNameCandidate(match[1]) : "";
 }
 
@@ -550,6 +564,22 @@ function isGoodNameCandidate(value) {
   const words = cleaned.split(/\s+/).filter(Boolean);
   const upperRatio = cleaned.length ? (cleaned.match(/[A-ZÀ-Ý]/g) || []).length / cleaned.replace(/\s/g, "").length : 0;
   return cleaned.length >= 6 && words.length >= 2 && upperRatio > 0.7;
+}
+
+function scoreNameCandidate(value) {
+  const cleaned = cleanNameCandidate(value);
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  return cleaned.length + (words.length * 8) - ((cleaned.match(/\b(PRONT|SEXO|DATA|MAE|MÃE)\b/g) || []).length * 40);
+}
+
+function normalizeOcrLabelMarkers(value) {
+  return normalizeText(value)
+    .replace(/\bN[0o]me\b/gi, "Nome")
+    .replace(/\bNorne\b/gi, "Nome")
+    .replace(/\bP[rn]ont\b/gi, "Pront")
+    .replace(/\bPr0nt\b/gi, "Pront")
+    .replace(/Nome\s*[;.\-]\s*/gi, "Nome:")
+    .replace(/Pront\s*[;.\-]\s*/gi, "Pront:");
 }
 
 function cleanRegistroCandidate(value) {

@@ -6,8 +6,8 @@ const CONFIG = {
 };
 
 const ZONES = {
-  nome: { x: 0.02, y: 0.17, width: 0.43, height: 0.105 },
-  registro: { x: 0.58, y: 0.35, width: 0.34, height: 0.34 },
+  nome: { x: 0.03, y: 0.11, width: 0.76, height: 0.13 },
+  registro: { x: 0.55, y: 0.70, width: 0.38, height: 0.24 },
 };
 
 const ALERT_TYPES = new Set(["particular", "complementacao", "complementação"]);
@@ -255,7 +255,7 @@ async function processCurrentImage() {
     const variants = buildImageVariants(imageBitmap);
     const [fullOcr, zoneOcr, barcodeValues] = await Promise.all([
       extractBestText(variants.ocr),
-      extractFixedZones(variants.reference),
+      extractFixedZones(variants.reference, variants.nameReference),
       extractBarcodes(variants.barcode),
     ]);
 
@@ -278,10 +278,12 @@ function buildImageVariants(imageBitmap) {
   const baseCanvas = drawBaseCanvas(imageBitmap, 2400);
   const enhancedCanvas = cloneCanvas(baseCanvas);
   const strongCanvas = cloneCanvas(baseCanvas);
+  const nameCanvas = cloneCanvas(baseCanvas);
   const barcodeCanvas = cloneCanvas(baseCanvas);
 
   applyGrayscaleContrast(enhancedCanvas, { contrast: 1.38, brightness: 1.05 });
   applyBinaryThreshold(strongCanvas, 158);
+  applyGrayscaleContrast(nameCanvas, { contrast: 1.55, brightness: 1.08 });
   applyGrayscaleContrast(barcodeCanvas, { contrast: 1.7, brightness: 1.08 });
 
   return {
@@ -296,6 +298,7 @@ function buildImageVariants(imageBitmap) {
       { name: "base", canvas: baseCanvas },
     ],
     reference: enhancedCanvas,
+    nameReference: nameCanvas,
   };
 }
 
@@ -402,9 +405,9 @@ async function extractBestText(variants) {
   return best;
 }
 
-async function extractFixedZones(sourceCanvas) {
+async function extractFixedZones(sourceCanvas, nameCanvas = sourceCanvas) {
   const [nome, registro] = await Promise.all([
-    extractText(cropRelative(sourceCanvas, ZONES.nome)),
+    extractText(cropRelative(nameCanvas, ZONES.nome)),
     extractText(cropRelative(sourceCanvas, ZONES.registro)),
   ]);
 
@@ -467,7 +470,7 @@ function parseLabelData(rawText, barcodeValues, fixedZones = {}) {
     .filter(Boolean);
 
   return {
-    nomePaciente: chooseNameCandidate(fixedZones.nomePaciente),
+    nomePaciente: chooseNameCandidate(fixedZones.nomePaciente, lines),
     registro: chooseRegistroCandidate(fixedZones.registro, lines, barcodeValues),
   };
 }
@@ -481,59 +484,77 @@ function normalizeText(text) {
     .replace(/[^\S\r\n]+/g, " ");
 }
 
-function chooseNameCandidate(zoneValue) {
-  const zone = cleanNameCandidate(zoneValue);
+function chooseNameCandidate(zoneValue, lines) {
+  const zone = cleanNameFromNomePront(zoneValue) || cleanNameCandidate(zoneValue);
+  if (isGoodNameCandidate(zone)) {
+    return zone;
+  }
+
+  const firstLine = cleanNameFromNomePront((lines || [])[0] || "");
+  if (isGoodNameCandidate(firstLine)) {
+    return firstLine;
+  }
+
   return isGoodNameCandidate(zone) ? zone : "";
 }
 
 function chooseRegistroCandidate(zoneValue, lines, barcodeValues) {
-  const barcodeCandidate = (barcodeValues || []).find((value) => value.length >= 6 && value.length <= 10);
-  if (barcodeCandidate) {
-    return barcodeCandidate;
-  }
-
   const zone = cleanRegistroCandidate(zoneValue);
-  if (zone.length >= 6) {
+  if (zone.length === 7) {
     return zone;
   }
 
-  return cleanRegistroCandidate(inferRegistroFromText(lines));
+  const lineCandidate = cleanRegistroCandidate(inferRegistroFromText(lines));
+  if (lineCandidate.length === 7) {
+    return lineCandidate;
+  }
+
+  const barcodeCandidate = (barcodeValues || []).find((value) => value.length === 7);
+  return barcodeCandidate || "";
 }
 
 function inferRegistroFromText(lines) {
-  const ignored = /Data\s*Nasc|Entrada|Mae|Mãe|Setor|Medico|M[eé]dico|Convenio|Convênio|Filme/i;
+  const ignored = /Nome:|Pront|Data\s*Nasc|Entrada|Mae|Mãe|Setor|Medico|M[eé]dico|Convenio|Convênio|Filme|Procedimento|N\.?\s*Cirur/i;
   const numbers = lines
     .filter((line) => !ignored.test(line))
     .flatMap((line) => extractLongNumbers(line));
-  return numbers.find((value) => value.length >= 6 && value.length <= 10) || "";
+  return numbers.filter((value) => value.length === 7).at(-1) || "";
 }
 
 function cleanNameCandidate(value) {
-  const firstNameLine = String(value || "")
+  const firstNameLine = normalizeText(value)
     .split(/\n/)
     .map((line) => line.trim())
     .filter(Boolean)
-    .find((line) => !/Hospital|Ipmm|Data\s*Nasc|Mae:|Mãe:|Entrada:|Setor:|Medico:|M[eé]dico:|Convenio:|Convênio|Filme/i.test(line)) || "";
+    .find((line) => /Nome\s*:/i.test(line) || !/Hospital|Ipmm|Data\s*Nasc|Mae:|Mãe:|Entrada:|Setor:|Medico:|M[eé]dico:|Convenio:|Convênio|Filme|Sexo:|Procedimento/i.test(line)) || "";
 
   return firstNameLine
+    .replace(/^.*?Nome\s*:\s*/i, "")
+    .replace(/\bPront\s*:.*$/i, "")
     .replace(/\bIpmm[i1]?\b.*$/i, "")
-    .replace(/\b(Data\s*Nasc|Mae|Mãe|Entrada|Setor|Medico|M[eé]dico|Convenio|Convênio|Filme)\b.*$/i, "")
+    .replace(/\b(Sexo|Data\s*Nasc|Mae|Mãe|Entrada|Setor|Medico|M[eé]dico|Convenio|Convênio|Filme|Procedimento)\b.*$/i, "")
     .replace(/[^A-Za-zÀ-ÿ\s]/g, " ")
     .replace(/\s{2,}/g, " ")
     .trim()
     .toUpperCase();
 }
 
+function cleanNameFromNomePront(value) {
+  const text = normalizeText(value);
+  const match = text.match(/Nome\s*:\s*([A-Za-zÀ-ÿ\s]+?)\s+Pront\s*:/i);
+  return match ? cleanNameCandidate(match[1]) : "";
+}
+
 function isGoodNameCandidate(value) {
   const cleaned = cleanNameCandidate(value);
   const words = cleaned.split(/\s+/).filter(Boolean);
   const upperRatio = cleaned.length ? (cleaned.match(/[A-ZÀ-Ý]/g) || []).length / cleaned.replace(/\s/g, "").length : 0;
-  return cleaned.length >= 8 && words.length >= 2 && upperRatio > 0.8;
+  return cleaned.length >= 6 && words.length >= 2 && upperRatio > 0.7;
 }
 
 function cleanRegistroCandidate(value) {
-  const digits = cleanDigits(value);
-  return digits.length >= 6 ? digits.slice(0, 10) : digits;
+  const values = String(value || "").match(/\d{7}/g) || [];
+  return values.at(-1) || "";
 }
 
 function cleanDigits(value) {

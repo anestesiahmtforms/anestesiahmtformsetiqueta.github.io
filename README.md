@@ -6,8 +6,8 @@ PWA para smartphone Android/iOS feito para o modelo atual de etiqueta HMT.
 
 O scanner foi personalizado para buscar somente:
 
-- `Nome do Paciente`: linha em letras maiusculas grandes, na faixa superior esquerda da etiqueta.
-- `Registro`: numero abaixo do codigo de barras, na area direita da etiqueta.
+- `Nome do Paciente`: primeira linha da etiqueta, iniciada por `Nome:` e cortada antes de `Pront`.
+- `Registro`: numero de 7 digitos abaixo do codigo de barras na area inferior direita.
 
 O campo `Convenio` foi removido do app.
 

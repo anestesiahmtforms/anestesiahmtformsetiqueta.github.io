@@ -6,8 +6,8 @@ const CONFIG = {
 };
 
 const ZONES = {
-  codigoEsquerdo: { x: 0.09, y: 0.62, width: 0.38, height: 0.34 },
-  numeroCodigoEsquerdo: { x: 0.13, y: 0.80, width: 0.30, height: 0.18 },
+  numeroEsquerdo: { x: 0.12, y: 0.76, width: 0.23, height: 0.19 },
+  numeroDireito: { x: 0.57, y: 0.75, width: 0.27, height: 0.20 },
 };
 
 const ALERT_TYPES = new Set(["particular", "complementacao", "complementação"]);
@@ -248,7 +248,7 @@ async function processCurrentImage() {
   }
 
   toggleBusy(true);
-  setStatus("Lendo numeracao abaixo do codigo de barras esquerdo...", "info");
+  setStatus("Lendo numeros destacados abaixo dos codigos de barras...", "info");
 
   try {
     const imageBitmap = await createImageBitmap(state.imageBlob);
@@ -259,7 +259,7 @@ async function processCurrentImage() {
     applyDataToForm(parsed);
 
     const missing = ["nomePaciente", "registro"].filter((key) => !parsed[key]);
-    const qualityNote = missing.length ? " Aproxime a camera do codigo de barras esquerdo e deixe o numero inferior bem nitido." : "";
+    const qualityNote = missing.length ? " Aproxime a camera e deixe nitidos os dois numeros inferiores destacados." : "";
     const missingNote = missing.length ? ` Confira manualmente: ${missing.join(", ")}.` : "";
     setStatus(`Leitura concluida.${missingNote}${qualityNote}`, missing.length ? "info" : "success");
   } catch (error) {
@@ -285,12 +285,6 @@ function buildImageVariants(imageBitmap) {
       { name: "base", canvas: baseCanvas },
       { name: "enhanced", canvas: enhancedCanvas },
       { name: "strong", canvas: strongCanvas },
-    ],
-    barcode: [
-      { name: "barcode", canvas: cropRelative(barcodeCanvas, ZONES.codigoEsquerdo) },
-      { name: "numero-esquerdo", canvas: cropRelative(barcodeCanvas, ZONES.numeroCodigoEsquerdo) },
-      { name: "full", canvas: barcodeCanvas },
-      { name: "base", canvas: baseCanvas },
     ],
     reference: enhancedCanvas,
   };
@@ -430,29 +424,48 @@ async function extractBestText(variants) {
 }
 
 async function extractFixedZones(sourceCanvas) {
-  const blocoCodigoZone = cropRelative(sourceCanvas, ZONES.codigoEsquerdo);
-  const numeroZone = cropRelative(sourceCanvas, ZONES.numeroCodigoEsquerdo);
-  const numeroAmpliado = upscaleCanvas(numeroZone, 4);
-  const numeroStrongZone = cloneCanvas(numeroAmpliado);
-  const blocoAmpliado = upscaleCanvas(blocoCodigoZone, 3);
-  const blocoStrongZone = cloneCanvas(blocoAmpliado);
-  applyGrayscaleContrast(numeroAmpliado, { contrast: 1.9, brightness: 1.08 });
-  applyBinaryThreshold(numeroStrongZone, 172);
-  applyGrayscaleContrast(blocoAmpliado, { contrast: 1.7, brightness: 1.08 });
-  applyBinaryThreshold(blocoStrongZone, 168);
-
-  const leituras = [
-    await extractDigitsText(numeroAmpliado),
-    await extractDigitsText(numeroStrongZone),
-    await extractDigitsText(blocoAmpliado),
-    await extractDigitsText(blocoStrongZone),
-  ];
-
-  const codigoEsquerdo = chooseLeftBarcodeNumber(leituras.map((item) => item.text));
+  const [numeroEsquerdo, numeroDireito] = await Promise.all([
+    extractNumberFromZone(sourceCanvas, ZONES.numeroEsquerdo, 6),
+    extractNumberFromZone(sourceCanvas, ZONES.numeroDireito, 7),
+  ]);
 
   return {
-    nomePaciente: codigoEsquerdo,
-    registro: codigoEsquerdo,
+    nomePaciente: numeroEsquerdo,
+    registro: numeroDireito,
+  };
+}
+
+async function extractNumberFromZone(sourceCanvas, zone, expectedLength) {
+  const zoneCanvas = cropRelative(sourceCanvas, zone);
+  const wideZone = cropRelative(sourceCanvas, expandZone(zone, 0.025, 0.035));
+  const expandedCanvas = upscaleCanvas(wideZone, 4);
+  const focusedCanvas = upscaleCanvas(zoneCanvas, 5);
+  const focusedStrong = cloneCanvas(focusedCanvas);
+  const expandedStrong = cloneCanvas(expandedCanvas);
+
+  applyGrayscaleContrast(focusedCanvas, { contrast: 2.0, brightness: 1.08 });
+  applyBinaryThreshold(focusedStrong, 174);
+  applyGrayscaleContrast(expandedCanvas, { contrast: 1.85, brightness: 1.08 });
+  applyBinaryThreshold(expandedStrong, 170);
+
+  const readings = [
+    await extractDigitsText(focusedCanvas),
+    await extractDigitsText(focusedStrong),
+    await extractDigitsText(expandedCanvas),
+    await extractDigitsText(expandedStrong),
+  ];
+
+  return chooseBarcodeNumber(readings.map((item) => item.text), expectedLength);
+}
+
+function expandZone(zone, horizontalPadding, verticalPadding) {
+  const x = Math.max(0, zone.x - horizontalPadding);
+  const y = Math.max(0, zone.y - verticalPadding);
+  return {
+    x,
+    y,
+    width: Math.min(1 - x, zone.width + (horizontalPadding * 2)),
+    height: Math.min(1 - y, zone.height + (verticalPadding * 2)),
   };
 }
 
@@ -517,18 +530,18 @@ function normalizeText(text) {
     .replace(/[^\S\r\n]+/g, " ");
 }
 
-function chooseLeftBarcodeNumber(values) {
+function chooseBarcodeNumber(values, expectedLength) {
   const candidates = values
     .flatMap((value) => String(value || "").match(/\d{5,8}/g) || [])
     .map((value) => value.trim())
     .filter(Boolean)
-    .sort((a, b) => scoreLeftBarcodeNumber(b) - scoreLeftBarcodeNumber(a));
+    .sort((a, b) => scoreBarcodeNumber(b, expectedLength) - scoreBarcodeNumber(a, expectedLength));
 
   return candidates[0] || "";
 }
 
-function scoreLeftBarcodeNumber(value) {
-  const lengthScore = value.length === 6 ? 60 : value.length === 7 ? 45 : 20;
+function scoreBarcodeNumber(value, expectedLength) {
+  const lengthScore = value.length === expectedLength ? 80 : Math.max(0, 40 - (Math.abs(value.length - expectedLength) * 18));
   return lengthScore + value.length;
 }
 

@@ -158,10 +158,10 @@ video {
 .guide-frame::before {
   content: "";
   position: absolute;
-  left: 9%;
+  left: 12%;
   bottom: 4%;
-  width: 38%;
-  height: 34%;
+  width: 23%;
+  height: 19%;
   border: 2px solid rgba(217, 154, 36, 0.95);
   border-radius: 6px;
 }
@@ -169,11 +169,11 @@ video {
 .guide-frame::after {
   content: "";
   position: absolute;
-  left: 13%;
-  bottom: 3%;
-  width: 30%;
-  height: 18%;
-  border: 2px dashed rgba(255, 255, 255, 0.86);
+  left: 57%;
+  bottom: 4%;
+  width: 27%;
+  height: 20%;
+  border: 2px solid rgba(217, 154, 36, 0.95);
   border-radius: 6px;
 }
 
@@ -188,12 +188,12 @@ video {
 }
 
 .guide-frame span {
-  left: 9%;
+  left: 8%;
   top: -13px;
 }
 
 .guide-frame strong {
-  left: 13%;
+  right: 8%;
   bottom: -13px;
 }
 

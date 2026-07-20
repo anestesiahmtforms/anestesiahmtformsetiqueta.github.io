@@ -6,8 +6,8 @@ const CONFIG = {
 };
 
 const ZONES = {
-  nome: { x: 0.015, y: 0.08, width: 0.92, height: 0.20 },
-  registro: { x: 0.55, y: 0.70, width: 0.38, height: 0.24 },
+  codigoEsquerdo: { x: 0.09, y: 0.62, width: 0.38, height: 0.34 },
+  numeroCodigoEsquerdo: { x: 0.13, y: 0.80, width: 0.30, height: 0.18 },
 };
 
 const ALERT_TYPES = new Set(["particular", "complementacao", "complementação"]);
@@ -248,22 +248,18 @@ async function processCurrentImage() {
   }
 
   toggleBusy(true);
-  setStatus("Lendo Nome do Paciente e Registro...", "info");
+  setStatus("Lendo numeracao abaixo do codigo de barras esquerdo...", "info");
 
   try {
     const imageBitmap = await createImageBitmap(state.imageBlob);
     const variants = buildImageVariants(imageBitmap);
-    const [fullOcr, zoneOcr, barcodeValues] = await Promise.all([
-      extractBestText(variants.ocr),
-      extractFixedZones(variants.reference, variants.nameReference),
-      extractBarcodes(variants.barcode),
-    ]);
+    const zoneOcr = await extractFixedZones(variants.reference);
 
-    const parsed = parseLabelData(fullOcr.text, barcodeValues, zoneOcr);
+    const parsed = parseLabelData(zoneOcr);
     applyDataToForm(parsed);
 
     const missing = ["nomePaciente", "registro"].filter((key) => !parsed[key]);
-    const qualityNote = fullOcr.confidence < 64 ? " Se necessario, aproxime mais a camera." : "";
+    const qualityNote = missing.length ? " Aproxime a camera do codigo de barras esquerdo e deixe o numero inferior bem nitido." : "";
     const missingNote = missing.length ? ` Confira manualmente: ${missing.join(", ")}.` : "";
     setStatus(`Leitura concluida.${missingNote}${qualityNote}`, missing.length ? "info" : "success");
   } catch (error) {
@@ -278,12 +274,10 @@ function buildImageVariants(imageBitmap) {
   const baseCanvas = drawBaseCanvas(imageBitmap, 2400);
   const enhancedCanvas = cloneCanvas(baseCanvas);
   const strongCanvas = cloneCanvas(baseCanvas);
-  const nameCanvas = cloneCanvas(baseCanvas);
   const barcodeCanvas = cloneCanvas(baseCanvas);
 
   applyGrayscaleContrast(enhancedCanvas, { contrast: 1.38, brightness: 1.05 });
   applyBinaryThreshold(strongCanvas, 158);
-  applyGrayscaleContrast(nameCanvas, { contrast: 1.55, brightness: 1.08 });
   applyGrayscaleContrast(barcodeCanvas, { contrast: 1.7, brightness: 1.08 });
 
   return {
@@ -293,12 +287,12 @@ function buildImageVariants(imageBitmap) {
       { name: "strong", canvas: strongCanvas },
     ],
     barcode: [
-      { name: "barcode", canvas: cropRelative(barcodeCanvas, ZONES.registro) },
+      { name: "barcode", canvas: cropRelative(barcodeCanvas, ZONES.codigoEsquerdo) },
+      { name: "numero-esquerdo", canvas: cropRelative(barcodeCanvas, ZONES.numeroCodigoEsquerdo) },
       { name: "full", canvas: barcodeCanvas },
       { name: "base", canvas: baseCanvas },
     ],
     reference: enhancedCanvas,
-    nameReference: nameCanvas,
   };
 }
 
@@ -336,6 +330,16 @@ function cropRelative(sourceCanvas, { x, y, width, height }) {
   canvas
     .getContext("2d", { willReadFrequently: true })
     .drawImage(sourceCanvas, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+function upscaleCanvas(sourceCanvas, scale = 3) {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(sourceCanvas.width * scale));
+  canvas.height = Math.max(1, Math.round(sourceCanvas.height * scale));
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
   return canvas;
 }
 
@@ -391,6 +395,26 @@ async function extractText(canvas) {
   };
 }
 
+async function extractDigitsText(canvas) {
+  const worker = await getWorker();
+  await worker.setParameters({
+    tessedit_pageseg_mode: "7",
+    tessedit_char_whitelist: "0123456789",
+  });
+
+  const { data } = await worker.recognize(canvas);
+
+  await worker.setParameters({
+    tessedit_pageseg_mode: "6",
+    tessedit_char_whitelist: "",
+  });
+
+  return {
+    text: cleanDigits(data.text || ""),
+    confidence: Number(data.confidence || 0),
+  };
+}
+
 async function extractBestText(variants) {
   let best = { text: "", confidence: 0, score: -1 };
 
@@ -405,20 +429,30 @@ async function extractBestText(variants) {
   return best;
 }
 
-async function extractFixedZones(sourceCanvas, nameCanvas = sourceCanvas) {
-  const nameZone = cropRelative(nameCanvas, ZONES.nome);
-  const nameStrongZone = cloneCanvas(nameZone);
-  applyBinaryThreshold(nameStrongZone, 170);
+async function extractFixedZones(sourceCanvas) {
+  const blocoCodigoZone = cropRelative(sourceCanvas, ZONES.codigoEsquerdo);
+  const numeroZone = cropRelative(sourceCanvas, ZONES.numeroCodigoEsquerdo);
+  const numeroAmpliado = upscaleCanvas(numeroZone, 4);
+  const numeroStrongZone = cloneCanvas(numeroAmpliado);
+  const blocoAmpliado = upscaleCanvas(blocoCodigoZone, 3);
+  const blocoStrongZone = cloneCanvas(blocoAmpliado);
+  applyGrayscaleContrast(numeroAmpliado, { contrast: 1.9, brightness: 1.08 });
+  applyBinaryThreshold(numeroStrongZone, 172);
+  applyGrayscaleContrast(blocoAmpliado, { contrast: 1.7, brightness: 1.08 });
+  applyBinaryThreshold(blocoStrongZone, 168);
 
-  const [nome, nomeStrong, registro] = await Promise.all([
-    extractText(nameZone),
-    extractText(nameStrongZone),
-    extractText(cropRelative(sourceCanvas, ZONES.registro)),
-  ]);
+  const leituras = [
+    await extractDigitsText(numeroAmpliado),
+    await extractDigitsText(numeroStrongZone),
+    await extractDigitsText(blocoAmpliado),
+    await extractDigitsText(blocoStrongZone),
+  ];
+
+  const codigoEsquerdo = chooseLeftBarcodeNumber(leituras.map((item) => item.text));
 
   return {
-    nomePaciente: chooseBestZoneName([nome.text, nomeStrong.text]),
-    registro: cleanRegistroCandidate(registro.text),
+    nomePaciente: codigoEsquerdo,
+    registro: codigoEsquerdo,
   };
 }
 
@@ -467,16 +501,10 @@ async function extractBarcodes(variants) {
   return Array.from(values).filter(Boolean);
 }
 
-function parseLabelData(rawText, barcodeValues, fixedZones = {}) {
-  const text = normalizeText(rawText);
-  const lines = text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-
+function parseLabelData(fixedZones = {}) {
   return {
-    nomePaciente: chooseNameCandidate(fixedZones.nomePaciente, lines),
-    registro: chooseRegistroCandidate(fixedZones.registro, lines, barcodeValues),
+    nomePaciente: fixedZones.nomePaciente || "",
+    registro: fixedZones.registro || "",
   };
 }
 
@@ -489,102 +517,19 @@ function normalizeText(text) {
     .replace(/[^\S\r\n]+/g, " ");
 }
 
-function chooseNameCandidate(zoneValue, lines) {
-  const zone = cleanNameFromNomePront(zoneValue) || cleanNameCandidate(zoneValue);
-  if (isGoodNameCandidate(zone)) {
-    return zone;
-  }
-
-  const firstLine = cleanNameFromNomePront((lines || [])[0] || "");
-  if (isGoodNameCandidate(firstLine)) {
-    return firstLine;
-  }
-
-  return isGoodNameCandidate(zone) ? zone : "";
-}
-
-function chooseBestZoneName(values) {
+function chooseLeftBarcodeNumber(values) {
   const candidates = values
-    .map((value) => cleanNameFromNomePront(value) || cleanNameCandidate(value))
-    .filter(isGoodNameCandidate)
-    .sort((a, b) => scoreNameCandidate(b) - scoreNameCandidate(a));
+    .flatMap((value) => String(value || "").match(/\d{5,8}/g) || [])
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .sort((a, b) => scoreLeftBarcodeNumber(b) - scoreLeftBarcodeNumber(a));
 
   return candidates[0] || "";
 }
 
-function chooseRegistroCandidate(zoneValue, lines, barcodeValues) {
-  const zone = cleanRegistroCandidate(zoneValue);
-  if (zone.length === 7) {
-    return zone;
-  }
-
-  const lineCandidate = cleanRegistroCandidate(inferRegistroFromText(lines));
-  if (lineCandidate.length === 7) {
-    return lineCandidate;
-  }
-
-  const barcodeCandidate = (barcodeValues || []).find((value) => value.length === 7);
-  return barcodeCandidate || "";
-}
-
-function inferRegistroFromText(lines) {
-  const ignored = /Nome:|Pront|Data\s*Nasc|Entrada|Mae|Mãe|Setor|Medico|M[eé]dico|Convenio|Convênio|Filme|Procedimento|N\.?\s*Cirur/i;
-  const numbers = lines
-    .filter((line) => !ignored.test(line))
-    .flatMap((line) => extractLongNumbers(line));
-  return numbers.filter((value) => value.length === 7).at(-1) || "";
-}
-
-function cleanNameCandidate(value) {
-  const firstNameLine = normalizeText(value)
-    .split(/\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .find((line) => /Nome\s*:/i.test(line) || !/Hospital|Ipmm|Data\s*Nasc|Mae:|Mãe:|Entrada:|Setor:|Medico:|M[eé]dico:|Convenio:|Convênio|Filme|Sexo:|Procedimento/i.test(line)) || "";
-
-  return firstNameLine
-    .replace(/^.*?Nome\s*:\s*/i, "")
-    .replace(/\bPront\s*:.*$/i, "")
-    .replace(/\bIpmm[i1]?\b.*$/i, "")
-    .replace(/\b(Sexo|Data\s*Nasc|Mae|Mãe|Entrada|Setor|Medico|M[eé]dico|Convenio|Convênio|Filme|Procedimento)\b.*$/i, "")
-    .replace(/[^A-Za-zÀ-ÿ\s]/g, " ")
-    .replace(/\s{2,}/g, " ")
-    .trim()
-    .toUpperCase();
-}
-
-function cleanNameFromNomePront(value) {
-  const text = normalizeOcrLabelMarkers(value);
-  const match = text.match(/Nome\s*:\s*([A-Za-zÀ-ÿ\s]+?)\s+(?:Pront|Prontu|Pront\.?)\s*:/i);
-  return match ? cleanNameCandidate(match[1]) : "";
-}
-
-function isGoodNameCandidate(value) {
-  const cleaned = cleanNameCandidate(value);
-  const words = cleaned.split(/\s+/).filter(Boolean);
-  const upperRatio = cleaned.length ? (cleaned.match(/[A-ZÀ-Ý]/g) || []).length / cleaned.replace(/\s/g, "").length : 0;
-  return cleaned.length >= 6 && words.length >= 2 && upperRatio > 0.7;
-}
-
-function scoreNameCandidate(value) {
-  const cleaned = cleanNameCandidate(value);
-  const words = cleaned.split(/\s+/).filter(Boolean);
-  return cleaned.length + (words.length * 8) - ((cleaned.match(/\b(PRONT|SEXO|DATA|MAE|MÃE)\b/g) || []).length * 40);
-}
-
-function normalizeOcrLabelMarkers(value) {
-  return normalizeText(value)
-    .replace(/\bN[0o]me\b/gi, "Nome")
-    .replace(/\bNorne\b/gi, "Nome")
-    .replace(/\bP[rn]ont\b/gi, "Pront")
-    .replace(/\bPr0nt\b/gi, "Pront")
-    .replace(/Nome\s*[;.\-]\s*/gi, "Nome:")
-    .replace(/Pront\s*[;.\-]\s*/gi, "Pront:");
-}
-
-function cleanRegistroCandidate(value) {
-  const values = String(value || "").match(/\d{7}/g) || [];
-  return values.at(-1) || "";
+function scoreLeftBarcodeNumber(value) {
+  const lengthScore = value.length === 6 ? 60 : value.length === 7 ? 45 : 20;
+  return lengthScore + value.length;
 }
 
 function cleanDigits(value) {

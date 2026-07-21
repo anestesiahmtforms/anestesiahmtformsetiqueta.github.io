@@ -169,7 +169,7 @@ video {
 .guide-frame::after {
   content: "";
   position: absolute;
-  left: 57%;
+  left: 51%;
   bottom: 4%;
   width: 27%;
   height: 20%;

@@ -7,7 +7,7 @@ const CONFIG = {
 
 const ZONES = {
   numeroEsquerdo: { x: 0.12, y: 0.76, width: 0.23, height: 0.19 },
-  numeroDireito: { x: 0.57, y: 0.75, width: 0.27, height: 0.20 },
+  numeroDireito: { x: 0.51, y: 0.75, width: 0.27, height: 0.20 },
 };
 
 const ALERT_TYPES = new Set(["particular", "complementacao", "complementação"]);

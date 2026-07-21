@@ -66,7 +66,13 @@ Data | Nome do Paciente | Cirurgia | Atendimento | Tipo | Credor | Plantonista(s
 9. Em `Executar como`, use `Voce`.
 10. Em acesso, escolha uma opcao que permita o uso do app.
 11. Copie a URL final `/exec`.
-12. No PWA, cole essa URL em `URL do Google Apps Script Web App` e salve.
+12. URL configurada como padrao no PWA:
+
+```text
+https://script.google.com/macros/s/AKfycbxyZIn0JO7eCrCOo5MdaCQkrUMuUwGB0HY_Z6j5FZ8xS5OEJ4ySQLNPaUoIz8nbbrKN/exec
+```
+
+Se criar uma nova implantacao no futuro, cole a nova URL em `URL do Google Apps Script Web App` e salve.
 
 ## Publicacao no GitHub Pages
 

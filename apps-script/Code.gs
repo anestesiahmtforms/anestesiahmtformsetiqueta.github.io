@@ -79,13 +79,14 @@ function doGet(e) {
 
 function doPost(e) {
   try {
-    ensureWorkbook_();
     const payload = JSON.parse((e.postData && e.postData.contents) || "{}");
+    const action = String(payload.action || (e.parameter && e.parameter.action) || "").trim();
 
-    if (payload.action === "aiExtract") {
+    if (action === "aiExtract") {
       return handleAiExtract_(payload);
     }
 
+    ensureWorkbook_();
     validatePayload_(payload);
 
     const sheet = getSpreadsheet_().getSheetByName(REGISTROS_SHEET);
@@ -103,7 +104,7 @@ function doPost(e) {
 
     return jsonResponse({
       ok: true,
-      message: "Registro salvo com sucesso.",
+      message: "Entrada salva com sucesso.",
       entries: getEntriesByDate_(payload.data),
     });
   } catch (error) {

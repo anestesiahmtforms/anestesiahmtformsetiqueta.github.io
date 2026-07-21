@@ -1,13 +1,8 @@
 const CONFIG = {
-  storageKey: "etiqueta-hmt-registros-v1",
+  storageKey: "etiqueta-hmt-ia-v1",
   guideWidthRatio: 0.94,
   guideAspectRatio: 3.35,
   defaultScriptUrl: "https://script.google.com/macros/s/AKfycbxyZIn0JO7eCrCOo5MdaCQkrUMuUwGB0HY_Z6j5FZ8xS5OEJ4ySQLNPaUoIz8nbbrKN/exec",
-};
-
-const ZONES = {
-  numeroEsquerdo: { x: 0.13, y: 0.80, width: 0.22, height: 0.14 },
-  numeroDireito: { x: 0.52, y: 0.80, width: 0.25, height: 0.14 },
 };
 
 const ALERT_TYPES = new Set(["particular", "complementacao", "complementação"]);
@@ -17,7 +12,6 @@ const state = {
   stream: null,
   imageBlob: null,
   imageUrl: "",
-  worker: null,
   metadata: null,
   config: loadConfig(),
   summaryRows: [],
@@ -283,7 +277,9 @@ async function processCurrentImage() {
 
 async function extractLabelWithAi(imageBlob) {
   const imageDataUrl = await blobToDataUrl(imageBlob);
-  const response = await fetch(state.config.scriptUrl, {
+  const url = new URL(state.config.scriptUrl);
+  url.searchParams.set("action", "aiExtract");
+  const response = await fetch(url.toString(), {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({
@@ -313,258 +309,6 @@ function blobToDataUrl(blob) {
   });
 }
 
-function buildImageVariants(imageBitmap) {
-  const baseCanvas = drawBaseCanvas(imageBitmap, 2400);
-  const enhancedCanvas = cloneCanvas(baseCanvas);
-  const strongCanvas = cloneCanvas(baseCanvas);
-  const barcodeCanvas = cloneCanvas(baseCanvas);
-
-  applyGrayscaleContrast(enhancedCanvas, { contrast: 1.38, brightness: 1.05 });
-  applyBinaryThreshold(strongCanvas, 158);
-  applyGrayscaleContrast(barcodeCanvas, { contrast: 1.7, brightness: 1.08 });
-
-  return {
-    ocr: [
-      { name: "base", canvas: baseCanvas },
-      { name: "enhanced", canvas: enhancedCanvas },
-      { name: "strong", canvas: strongCanvas },
-    ],
-    reference: enhancedCanvas,
-  };
-}
-
-function drawBaseCanvas(imageBitmap, maxWidth) {
-  const scale = imageBitmap.width > maxWidth ? maxWidth / imageBitmap.width : 1;
-  const width = Math.round(imageBitmap.width * scale);
-  const height = Math.round(imageBitmap.height * scale);
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(imageBitmap, 0, 0, width, height);
-  return canvas;
-}
-
-function cloneCanvas(sourceCanvas) {
-  const canvas = document.createElement("canvas");
-  canvas.width = sourceCanvas.width;
-  canvas.height = sourceCanvas.height;
-  canvas.getContext("2d", { willReadFrequently: true }).drawImage(sourceCanvas, 0, 0);
-  return canvas;
-}
-
-function cropRelative(sourceCanvas, { x, y, width, height }) {
-  const sx = Math.round(sourceCanvas.width * x);
-  const sy = Math.round(sourceCanvas.height * y);
-  const sw = Math.round(sourceCanvas.width * width);
-  const sh = Math.round(sourceCanvas.height * height);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, sw);
-  canvas.height = Math.max(1, sh);
-  canvas
-    .getContext("2d", { willReadFrequently: true })
-    .drawImage(sourceCanvas, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-  return canvas;
-}
-
-function upscaleCanvas(sourceCanvas, scale = 3) {
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(sourceCanvas.width * scale));
-  canvas.height = Math.max(1, Math.round(sourceCanvas.height * scale));
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
-  return canvas;
-}
-
-function applyGrayscaleContrast(canvas, { contrast, brightness }) {
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const pixels = imageData.data;
-
-  for (let i = 0; i < pixels.length; i += 4) {
-    const avg = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
-    const adjusted = clamp(((avg - 128) * contrast) + (128 * brightness), 0, 255);
-    pixels[i] = adjusted;
-    pixels[i + 1] = adjusted;
-    pixels[i + 2] = adjusted;
-  }
-
-  ctx.putImageData(imageData, 0, 0);
-}
-
-function applyBinaryThreshold(canvas, threshold) {
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const pixels = imageData.data;
-
-  for (let i = 0; i < pixels.length; i += 4) {
-    const avg = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
-    const value = avg > threshold ? 255 : 0;
-    pixels[i] = value;
-    pixels[i + 1] = value;
-    pixels[i + 2] = value;
-  }
-
-  ctx.putImageData(imageData, 0, 0);
-}
-
-async function getWorker() {
-  if (!state.worker) {
-    state.worker = await Tesseract.createWorker("por");
-    await state.worker.setParameters({
-      tessedit_pageseg_mode: "6",
-      preserve_interword_spaces: "1",
-    });
-  }
-  return state.worker;
-}
-
-async function extractText(canvas) {
-  const worker = await getWorker();
-  const { data } = await worker.recognize(canvas);
-  return {
-    text: (data.text || "").replace(/\r/g, ""),
-    confidence: Number(data.confidence || 0),
-  };
-}
-
-async function extractDigitsText(canvas) {
-  const worker = await getWorker();
-  await worker.setParameters({
-    tessedit_pageseg_mode: "7",
-    tessedit_char_whitelist: "0123456789",
-  });
-
-  const { data } = await worker.recognize(canvas);
-
-  await worker.setParameters({
-    tessedit_pageseg_mode: "6",
-    tessedit_char_whitelist: "",
-  });
-
-  return {
-    text: cleanDigits(data.text || ""),
-    confidence: Number(data.confidence || 0),
-  };
-}
-
-async function extractBestText(variants) {
-  let best = { text: "", confidence: 0, score: -1 };
-
-  for (const variant of variants) {
-    const result = await extractText(variant.canvas);
-    const score = scoreOcrResult(result.text, result.confidence);
-    if (score > best.score) {
-      best = { ...result, score };
-    }
-  }
-
-  return best;
-}
-
-async function extractFixedZones(sourceCanvas) {
-  const [numeroEsquerdo, numeroDireito] = await Promise.all([
-    extractNumberFromZone(sourceCanvas, ZONES.numeroEsquerdo, { expectedLength: 6, preferredPrefix: "10" }),
-    extractNumberFromZone(sourceCanvas, ZONES.numeroDireito, { expectedLength: 7, preferredPrefix: "75" }),
-  ]);
-
-  return {
-    nomePaciente: numeroEsquerdo,
-    registro: numeroDireito,
-  };
-}
-
-async function extractNumberFromZone(sourceCanvas, zone, options) {
-  const { expectedLength, preferredPrefix } = options;
-  const zoneCanvas = cropRelative(sourceCanvas, zone);
-  const wideZone = cropRelative(sourceCanvas, expandZone(zone, 0.02, 0.015));
-  const expandedCanvas = upscaleCanvas(wideZone, 4);
-  const focusedCanvas = upscaleCanvas(zoneCanvas, 5);
-  const focusedStrong = cloneCanvas(focusedCanvas);
-  const expandedStrong = cloneCanvas(expandedCanvas);
-
-  applyGrayscaleContrast(focusedCanvas, { contrast: 2.0, brightness: 1.08 });
-  applyBinaryThreshold(focusedStrong, 174);
-  applyGrayscaleContrast(expandedCanvas, { contrast: 1.85, brightness: 1.08 });
-  applyBinaryThreshold(expandedStrong, 170);
-
-  const readings = [
-    await extractDigitsText(focusedCanvas),
-    await extractDigitsText(focusedStrong),
-    await extractDigitsText(expandedCanvas),
-    await extractDigitsText(expandedStrong),
-  ];
-
-  return chooseBarcodeNumber(readings.map((item) => item.text), { expectedLength, preferredPrefix });
-}
-
-function expandZone(zone, horizontalPadding, verticalPadding) {
-  const x = Math.max(0, zone.x - horizontalPadding);
-  const y = Math.max(0, zone.y - verticalPadding);
-  return {
-    x,
-    y,
-    width: Math.min(1 - x, zone.width + (horizontalPadding * 2)),
-    height: Math.min(1 - y, zone.height + (verticalPadding * 2)),
-  };
-}
-
-function scoreOcrResult(text, confidence) {
-  const normalized = normalizeText(text);
-  const markers = [
-    /Hospital Madre Teresa/i,
-    /Data\s*Nasc/i,
-    /Mae:/i,
-    /Entrada:/i,
-    /Setor:/i,
-    /Medico:/i,
-    /\d{6,}/,
-  ];
-  const hits = markers.filter((pattern) => pattern.test(normalized)).length;
-  return confidence + (hits * 18);
-}
-
-async function extractBarcodes(variants) {
-  const values = new Set();
-
-  for (const variant of variants) {
-    if ("BarcodeDetector" in window) {
-      try {
-        const detector = new BarcodeDetector({ formats: ["code_128", "ean_13", "ean_8", "itf", "codabar"] });
-        const results = await detector.detect(variant.canvas);
-        results.forEach((result) => values.add(cleanDigits(result.rawValue)));
-      } catch (error) {
-        console.warn(`BarcodeDetector falhou em ${variant.name}:`, error);
-      }
-    }
-
-    if (window.ZXingBrowser) {
-      const codeReader = new ZXingBrowser.BrowserMultiFormatReader();
-      try {
-        const result = await codeReader.decodeFromCanvas(variant.canvas);
-        if (result?.getText) {
-          values.add(cleanDigits(result.getText()));
-        }
-      } catch (error) {
-        console.warn(`ZXing fallback falhou em ${variant.name}:`, error);
-      }
-    }
-  }
-
-  return Array.from(values).filter(Boolean);
-}
-
-function parseLabelData(fixedZones = {}) {
-  return {
-    nomePaciente: fixedZones.nomePaciente || "",
-    registro: fixedZones.registro || "",
-  };
-}
-
 function normalizeText(text) {
   return String(text || "")
     .replace(/[|]/g, "I")
@@ -574,49 +318,8 @@ function normalizeText(text) {
     .replace(/[^\S\r\n]+/g, " ");
 }
 
-function chooseBarcodeNumber(values, options) {
-  const { expectedLength, preferredPrefix = "" } = options;
-  const candidates = values
-    .flatMap((value) => buildExactDigitCandidates(value, expectedLength))
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .sort((a, b) => scoreBarcodeNumber(b, { expectedLength, preferredPrefix }) - scoreBarcodeNumber(a, { expectedLength, preferredPrefix }));
-
-  return candidates[0] || "";
-}
-
-function buildExactDigitCandidates(value, expectedLength) {
-  const digits = cleanDigits(value);
-  if (digits.length < expectedLength) {
-    return [];
-  }
-
-  if (digits.length === expectedLength) {
-    return [digits];
-  }
-
-  const candidates = [];
-  for (let index = 0; index <= digits.length - expectedLength; index += 1) {
-    candidates.push(digits.slice(index, index + expectedLength));
-  }
-
-  return candidates;
-}
-
-function scoreBarcodeNumber(value, options) {
-  const { expectedLength, preferredPrefix = "" } = options;
-  const exactLengthScore = value.length === expectedLength ? 100 : -100;
-  const prefixScore = preferredPrefix && value.startsWith(preferredPrefix) ? 40 : 0;
-  const nonZeroScore = /^0+$/.test(value) ? -50 : 0;
-  return exactLengthScore + prefixScore + nonZeroScore + value.length;
-}
-
 function cleanDigits(value) {
   return String(value || "").replace(/\D/g, "");
-}
-
-function extractLongNumbers(line) {
-  return (String(line || "").match(/\d{6,}/g) || []).map((item) => item.trim());
 }
 
 function applyDataToForm(data) {
@@ -742,7 +445,7 @@ async function loadSummary(options = {}) {
   }
 }
 
-function renderSummary(rows, emptyMessage = "Nenhum registro encontrado nesta data.") {
+function renderSummary(rows, emptyMessage = "Nenhuma entrada encontrada nesta data.") {
   const alertCount = rows.filter((row) => isAlertType(row.tipo)).length;
   summaryTotalsEl.innerHTML = `
     <span>${rows.length} entrada(s)</span>
@@ -788,7 +491,7 @@ async function loadMonthlyEntries(month) {
   const result = await response.json();
 
   if (!response.ok || result.ok !== true) {
-    throw new Error(result.message || "Falha ao carregar registros do mes.");
+    throw new Error(result.message || "Falha ao carregar entradas do mes.");
   }
 
   return result.entries || [];
@@ -868,7 +571,7 @@ async function generateMonthlyPdfForWhatsApp() {
   try {
     const rows = await loadMonthlyEntries(month);
     if (!rows.length) {
-      setStatus("Nenhum registro encontrado para o mes selecionado.", "error");
+      setStatus("Nenhuma entrada encontrada para o mes selecionado.", "error");
       return;
     }
 

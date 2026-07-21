@@ -158,10 +158,10 @@ video {
 .guide-frame::before {
   content: "";
   position: absolute;
-  left: 12%;
-  bottom: 4%;
-  width: 23%;
-  height: 19%;
+  left: 13%;
+  bottom: 6%;
+  width: 22%;
+  height: 14%;
   border: 2px solid rgba(217, 154, 36, 0.95);
   border-radius: 6px;
 }
@@ -169,10 +169,10 @@ video {
 .guide-frame::after {
   content: "";
   position: absolute;
-  left: 51%;
-  bottom: 4%;
-  width: 27%;
-  height: 20%;
+  left: 52%;
+  bottom: 6%;
+  width: 25%;
+  height: 14%;
   border: 2px solid rgba(217, 154, 36, 0.95);
   border-radius: 6px;
 }

@@ -6,8 +6,8 @@ const CONFIG = {
 };
 
 const ZONES = {
-  numeroEsquerdo: { x: 0.12, y: 0.76, width: 0.23, height: 0.19 },
-  numeroDireito: { x: 0.51, y: 0.75, width: 0.27, height: 0.20 },
+  numeroEsquerdo: { x: 0.13, y: 0.80, width: 0.22, height: 0.14 },
+  numeroDireito: { x: 0.52, y: 0.80, width: 0.25, height: 0.14 },
 };
 
 const ALERT_TYPES = new Set(["particular", "complementacao", "complementação"]);
@@ -434,8 +434,8 @@ async function extractBestText(variants) {
 
 async function extractFixedZones(sourceCanvas) {
   const [numeroEsquerdo, numeroDireito] = await Promise.all([
-    extractNumberFromZone(sourceCanvas, ZONES.numeroEsquerdo, 6),
-    extractNumberFromZone(sourceCanvas, ZONES.numeroDireito, 7),
+    extractNumberFromZone(sourceCanvas, ZONES.numeroEsquerdo, { expectedLength: 6, preferredPrefix: "10" }),
+    extractNumberFromZone(sourceCanvas, ZONES.numeroDireito, { expectedLength: 7, preferredPrefix: "75" }),
   ]);
 
   return {
@@ -444,9 +444,10 @@ async function extractFixedZones(sourceCanvas) {
   };
 }
 
-async function extractNumberFromZone(sourceCanvas, zone, expectedLength) {
+async function extractNumberFromZone(sourceCanvas, zone, options) {
+  const { expectedLength, preferredPrefix } = options;
   const zoneCanvas = cropRelative(sourceCanvas, zone);
-  const wideZone = cropRelative(sourceCanvas, expandZone(zone, 0.025, 0.035));
+  const wideZone = cropRelative(sourceCanvas, expandZone(zone, 0.02, 0.015));
   const expandedCanvas = upscaleCanvas(wideZone, 4);
   const focusedCanvas = upscaleCanvas(zoneCanvas, 5);
   const focusedStrong = cloneCanvas(focusedCanvas);
@@ -464,7 +465,7 @@ async function extractNumberFromZone(sourceCanvas, zone, expectedLength) {
     await extractDigitsText(expandedStrong),
   ];
 
-  return chooseBarcodeNumber(readings.map((item) => item.text), expectedLength);
+  return chooseBarcodeNumber(readings.map((item) => item.text), { expectedLength, preferredPrefix });
 }
 
 function expandZone(zone, horizontalPadding, verticalPadding) {
@@ -539,19 +540,41 @@ function normalizeText(text) {
     .replace(/[^\S\r\n]+/g, " ");
 }
 
-function chooseBarcodeNumber(values, expectedLength) {
+function chooseBarcodeNumber(values, options) {
+  const { expectedLength, preferredPrefix = "" } = options;
   const candidates = values
-    .flatMap((value) => String(value || "").match(/\d{5,8}/g) || [])
+    .flatMap((value) => buildExactDigitCandidates(value, expectedLength))
     .map((value) => value.trim())
     .filter(Boolean)
-    .sort((a, b) => scoreBarcodeNumber(b, expectedLength) - scoreBarcodeNumber(a, expectedLength));
+    .sort((a, b) => scoreBarcodeNumber(b, { expectedLength, preferredPrefix }) - scoreBarcodeNumber(a, { expectedLength, preferredPrefix }));
 
   return candidates[0] || "";
 }
 
-function scoreBarcodeNumber(value, expectedLength) {
-  const lengthScore = value.length === expectedLength ? 80 : Math.max(0, 40 - (Math.abs(value.length - expectedLength) * 18));
-  return lengthScore + value.length;
+function buildExactDigitCandidates(value, expectedLength) {
+  const digits = cleanDigits(value);
+  if (digits.length < expectedLength) {
+    return [];
+  }
+
+  if (digits.length === expectedLength) {
+    return [digits];
+  }
+
+  const candidates = [];
+  for (let index = 0; index <= digits.length - expectedLength; index += 1) {
+    candidates.push(digits.slice(index, index + expectedLength));
+  }
+
+  return candidates;
+}
+
+function scoreBarcodeNumber(value, options) {
+  const { expectedLength, preferredPrefix = "" } = options;
+  const exactLengthScore = value.length === expectedLength ? 100 : -100;
+  const prefixScore = preferredPrefix && value.startsWith(preferredPrefix) ? 40 : 0;
+  const nonZeroScore = /^0+$/.test(value) ? -50 : 0;
+  return exactLengthScore + prefixScore + nonZeroScore + value.length;
 }
 
 function cleanDigits(value) {

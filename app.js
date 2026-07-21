@@ -991,8 +991,9 @@ function setupPlantonistasPicker() {
   button.id = "plantonistas-toggle";
   button.type = "button";
   button.className = "multi-select-toggle";
+  button.setAttribute("aria-label", "Selecionar plantonistas");
   button.setAttribute("aria-expanded", "false");
-  button.textContent = "Selecione uma ou mais siglas";
+  button.textContent = "";
 
   const panel = document.createElement("div");
   panel.id = "plantonistas-options";
@@ -1041,7 +1042,7 @@ function syncPlantonistasFromCheckboxes() {
   });
 
   if (plantonistasUi.button) {
-    plantonistasUi.button.textContent = selected.length ? selected.join(", ") : "Selecione uma ou mais siglas";
+    plantonistasUi.button.textContent = selected.length ? selected.join(", ") : "";
     plantonistasUi.button.classList.toggle("has-selection", selected.length > 0);
   }
 }

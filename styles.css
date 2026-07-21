@@ -177,26 +177,6 @@ video {
   border-radius: 6px;
 }
 
-.guide-frame span,
-.guide-frame strong {
-  position: absolute;
-  padding: 5px 8px;
-  border-radius: 999px;
-  background: rgba(11, 63, 58, 0.94);
-  color: white;
-  font-size: 0.68rem;
-}
-
-.guide-frame span {
-  left: 8%;
-  top: -13px;
-}
-
-.guide-frame strong {
-  right: 8%;
-  bottom: -13px;
-}
-
 .preview-wrap {
   margin-top: 12px;
 }
@@ -343,7 +323,7 @@ select {
 }
 
 .multi-select-toggle::after {
-  content: "Abrir lista";
+  content: "";
   float: right;
   color: var(--brand-2);
   font-size: 0.74rem;
@@ -368,6 +348,10 @@ select {
   border-radius: var(--radius);
   background: white;
   box-shadow: 0 16px 30px rgba(12, 35, 31, 0.1);
+}
+
+.multi-select-options[hidden] {
+  display: none;
 }
 
 .multi-select-options label {

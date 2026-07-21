@@ -156,25 +156,11 @@ video {
 }
 
 .guide-frame::before {
-  content: "";
-  position: absolute;
-  left: 13%;
-  bottom: 6%;
-  width: 22%;
-  height: 14%;
-  border: 2px solid rgba(217, 154, 36, 0.95);
-  border-radius: 6px;
+  content: none;
 }
 
 .guide-frame::after {
-  content: "";
-  position: absolute;
-  left: 52%;
-  bottom: 6%;
-  width: 25%;
-  height: 14%;
-  border: 2px solid rgba(217, 154, 36, 0.95);
-  border-radius: 6px;
+  content: none;
 }
 
 .preview-wrap {

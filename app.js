@@ -39,7 +39,8 @@ const summaryListEl = document.querySelector("#summary-list");
 const fields = {
   data: document.querySelector("#data"),
   nomePaciente: document.querySelector("#nomePaciente"),
-  registro: document.querySelector("#registro"),
+  cirurgia: document.querySelector("#cirurgia"),
+  atendimento: document.querySelector("#atendimento"),
   tipo: document.querySelector("#tipo"),
   credor: document.querySelector("#credor"),
   plantonistas: document.querySelector("#plantonistas"),
@@ -208,7 +209,7 @@ async function captureFromCamera() {
 
   const blob = await new Promise((resolve) => canvasEl.toBlob(resolve, "image/jpeg", 0.98));
   setImageBlob(blob);
-  setStatus("Etiqueta capturada. Toque em Ler etiqueta.", "success");
+  setStatus("Etiqueta capturada. Toque em Ler com IA.", "success");
 }
 
 function handleFileUpload(event) {
@@ -221,7 +222,7 @@ function handleFileUpload(event) {
   stopCamera();
   cameraStatusEl.textContent = "Foto enviada";
   cameraStatusEl.className = "status-pill neutral";
-  setStatus("Foto carregada. Toque em Ler etiqueta.", "success");
+  setStatus("Foto carregada. Toque em Ler com IA.", "success");
 }
 
 function setImageBlob(blob) {
@@ -256,27 +257,60 @@ async function processCurrentImage() {
     return;
   }
 
+  if (!state.config.scriptUrl) {
+    setStatus("Salve primeiro a URL do Google Apps Script.", "error");
+    return;
+  }
+
   toggleBusy(true);
-  setStatus("Lendo numeros destacados abaixo dos codigos de barras...", "info");
+  setStatus("Lendo etiqueta com IA...", "info");
 
   try {
-    const imageBitmap = await createImageBitmap(state.imageBlob);
-    const variants = buildImageVariants(imageBitmap);
-    const zoneOcr = await extractFixedZones(variants.reference);
-
-    const parsed = parseLabelData(zoneOcr);
+    const parsed = await extractLabelWithAi(state.imageBlob);
     applyDataToForm(parsed);
 
-    const missing = ["nomePaciente", "registro"].filter((key) => !parsed[key]);
-    const qualityNote = missing.length ? " Aproxime a camera e deixe nitidos os dois numeros inferiores destacados." : "";
+    const missing = ["nomePaciente", "cirurgia", "atendimento"].filter((key) => !parsed[key]);
+    const qualityNote = missing.length ? " Confira a foto e tente novamente com a etiqueta inteira mais nitida." : "";
     const missingNote = missing.length ? ` Confira manualmente: ${missing.join(", ")}.` : "";
-    setStatus(`Leitura concluida.${missingNote}${qualityNote}`, missing.length ? "info" : "success");
+    setStatus(`Leitura com IA concluida.${missingNote}${qualityNote}`, missing.length ? "info" : "success");
   } catch (error) {
     console.error(error);
-    setStatus(`Falha ao ler a etiqueta: ${error.message}`, "error");
+    setStatus(`Falha na leitura com IA: ${error.message}`, "error");
   } finally {
     toggleBusy(false);
   }
+}
+
+async function extractLabelWithAi(imageBlob) {
+  const imageDataUrl = await blobToDataUrl(imageBlob);
+  const response = await fetch(state.config.scriptUrl, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({
+      action: "aiExtract",
+      imageDataUrl,
+    }),
+  });
+
+  const result = await response.json();
+  if (!response.ok || result.ok !== true) {
+    throw new Error(result.message || "Resposta invalida do Apps Script.");
+  }
+
+  return {
+    nomePaciente: String(result.nomePaciente || "").trim(),
+    cirurgia: cleanDigits(result.cirurgia || ""),
+    atendimento: cleanDigits(result.atendimento || ""),
+  };
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Falha ao preparar imagem."));
+    reader.readAsDataURL(blob);
+  });
 }
 
 function buildImageVariants(imageBitmap) {
@@ -589,8 +623,11 @@ function applyDataToForm(data) {
   if (data.nomePaciente) {
     fields.nomePaciente.value = data.nomePaciente;
   }
-  if (data.registro) {
-    fields.registro.value = data.registro;
+  if (data.cirurgia) {
+    fields.cirurgia.value = data.cirurgia;
+  }
+  if (data.atendimento) {
+    fields.atendimento.value = data.atendimento;
   }
 }
 
@@ -599,7 +636,8 @@ function collectFormData() {
   return {
     data: fields.data.value,
     nomePaciente: fields.nomePaciente.value.trim(),
-    registro: fields.registro.value.trim(),
+    cirurgia: fields.cirurgia.value.trim(),
+    atendimento: fields.atendimento.value.trim(),
     tipo: fields.tipo.value.trim(),
     credor: fields.credor.value.trim(),
     plantonistas: isCaixaTotal ? "" : getSelectedPlantonistasValue(),
@@ -615,14 +653,14 @@ async function sendToSheet() {
   }
 
   const payload = collectFormData();
-  const requiredFields = ["data", "nomePaciente", "registro", "tipo", "credor"];
+  const requiredFields = ["data", "nomePaciente", "cirurgia", "atendimento", "tipo", "credor"];
   if (payload.credor !== CAIXA_TOTAL) {
     requiredFields.push("plantonistas");
   }
 
   const missing = requiredFields.filter((key) => !payload[key]);
   if (missing.length) {
-    setStatus("Preencha Data, Nome, Registro, Tipo, Credor e Plantonista(s) quando necessario antes de enviar.", "error");
+    setStatus("Preencha Data, Nome, Cirurgia, Atendimento, Tipo, Credor e Plantonista(s) quando necessario antes de enviar.", "error");
     return;
   }
 
@@ -631,7 +669,8 @@ async function sendToSheet() {
     "",
     `Data: ${formatDate(payload.data)}`,
     `Nome: ${payload.nomePaciente}`,
-    `Registro: ${payload.registro}`,
+    `Cirurgia: ${payload.cirurgia}`,
+    `Atendimento: ${payload.atendimento}`,
     `Tipo: ${payload.tipo}`,
     `Credor: ${payload.credor}`,
     `Plantonista(s): ${payload.plantonistas || "Nao necessario"}`,
@@ -722,7 +761,7 @@ function renderSummary(rows, emptyMessage = "Nenhum registro encontrado nesta da
         <div class="summary-index">${index + 1}</div>
         <div>
           <strong>${escapeHtml(row.nomePaciente || "")}</strong>
-          <span>Registro ${escapeHtml(row.registro || "")}</span>
+          <span>Cirurgia ${escapeHtml(row.cirurgia || "")} | Atendimento ${escapeHtml(row.atendimento || "")}</span>
         </div>
         <div>
           <b>${escapeHtml(row.tipo || "")}</b>
@@ -773,7 +812,8 @@ function generatePdfReport() {
   const rows = state.summaryRows.map((row, index) => [
     String(index + 1),
     row.nomePaciente || "",
-    row.registro || "",
+    row.cirurgia || "",
+    row.atendimento || "",
     row.tipo || "",
     row.credor || "",
     row.plantonistas || "",
@@ -790,19 +830,20 @@ function generatePdfReport() {
 
   doc.autoTable({
     startY: 32,
-    head: [["#", "Nome do Paciente", "Registro", "Tipo", "Credor", "Plantonista(s)", "Observacoes"]],
+    head: [["#", "Nome do Paciente", "Cirurgia", "Atendimento", "Tipo", "Credor", "Plantonista(s)", "Observacoes"]],
     body: rows,
     theme: "grid",
     styles: { fontSize: 8, cellPadding: 2.2, overflow: "linebreak" },
     headStyles: { fillColor: [11, 63, 58], textColor: [255, 255, 255] },
     columnStyles: {
       0: { cellWidth: 10 },
-      1: { cellWidth: 68 },
-      2: { cellWidth: 24 },
-      3: { cellWidth: 32 },
-      4: { cellWidth: 44 },
-      5: { cellWidth: 34 },
-      6: { cellWidth: 62 },
+      1: { cellWidth: 58 },
+      2: { cellWidth: 22 },
+      3: { cellWidth: 26 },
+      4: { cellWidth: 28 },
+      5: { cellWidth: 40 },
+      6: { cellWidth: 30 },
+      7: { cellWidth: 62 },
     },
     didParseCell(data) {
       if (data.section === "body") {
@@ -868,7 +909,8 @@ function buildMonthlyPdf(rows, month) {
     String(index + 1),
     formatDate(row.data || ""),
     row.nomePaciente || "",
-    row.registro || "",
+    row.cirurgia || "",
+    row.atendimento || "",
     row.tipo || "",
     row.credor || "",
     row.plantonistas || "-",
@@ -885,7 +927,7 @@ function buildMonthlyPdf(rows, month) {
 
   doc.autoTable({
     startY: 34,
-    head: [["#", "Data", "Nome do Paciente", "Registro", "Tipo", "Credor", "Plantonista(s)", "Observacoes"]],
+    head: [["#", "Data", "Nome do Paciente", "Cirurgia", "Atendimento", "Tipo", "Credor", "Plantonista(s)", "Observacoes"]],
     body: tableRows,
     theme: "grid",
     styles: { fontSize: 7.6, cellPadding: 2, overflow: "linebreak", valign: "middle" },
@@ -893,12 +935,13 @@ function buildMonthlyPdf(rows, month) {
     columnStyles: {
       0: { cellWidth: 9 },
       1: { cellWidth: 20 },
-      2: { cellWidth: 58 },
-      3: { cellWidth: 22 },
-      4: { cellWidth: 28 },
-      5: { cellWidth: 40 },
-      6: { cellWidth: 31 },
-      7: { cellWidth: 66 },
+      2: { cellWidth: 48 },
+      3: { cellWidth: 20 },
+      4: { cellWidth: 24 },
+      5: { cellWidth: 25 },
+      6: { cellWidth: 36 },
+      7: { cellWidth: 28 },
+      8: { cellWidth: 51 },
     },
     didParseCell(data) {
       if (data.section === "body") {

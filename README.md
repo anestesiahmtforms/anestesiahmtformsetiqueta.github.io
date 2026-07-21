@@ -1,47 +1,41 @@
 # ETIQUETAS HMT
 
-PWA para smartphone Android/iOS feito para o modelo atual de etiqueta HMT.
+PWA para smartphone Android/iOS para leitura de etiquetas HMT com IA.
 
 ## Leitura da etiqueta
 
-O scanner foi personalizado para buscar somente:
+O app nao usa mais OCR local. O botao `Ler com IA` envia a foto capturada ao Google Apps Script, que chama a OpenAI API com visao e retorna:
 
-- `Nome do Paciente`: numero sombreado abaixo do codigo de barras esquerdo.
-- `Registro`: numero sombreado abaixo do codigo de barras direito.
+- `Nome do Paciente`: texto depois de `Nome:` e antes de `Pront:`.
+- `Cirurgia`: numero abaixo do primeiro codigo de barras, na area inferior esquerda.
+- `Atendimento`: numero abaixo do segundo codigo de barras, na area inferior direita.
 
-Exemplo na etiqueta de referencia: `Nome do Paciente` recebe `109231` e `Registro` recebe `7525561`.
+Exemplo na etiqueta de referencia:
 
-O campo `Convenio` foi removido do app.
+```text
+Nome do Paciente: Celio Cardoso
+Cirurgia: 109231
+Atendimento: 7525561
+```
 
 ## Campos do app
 
 - `Data`, preenchida automaticamente com a data atual e editavel para dias anteriores.
-- `Nome do Paciente`, preenchido pelo scanner e editavel.
-- `Registro`, preenchido pelo scanner e editavel.
-- `Tipo`: `Particular`, `Complementação`, `Unimed`, `Outros`.
-- `Credor`: `Caixa TOTAL`, `50%:Caixa/Plantão:50%`, `Plantão TOTAL`.
-- `Plantonista(s)`: caixa de selecao multipla com as siglas definidas. Ao tocar, abre a lista e permite marcar quantas siglas forem necessarias. Quando `Credor` for `Caixa TOTAL`, o campo fica desativado porque nao e necessario.
+- `Nome do Paciente`, preenchido pela IA e editavel.
+- `Cirurgia`, preenchida pela IA e editavel.
+- `Atendimento`, preenchido pela IA e editavel.
+- `Tipo`: `Particular`, `Complementacao`, `Unimed`, `Outros`.
+- `Credor`: `Caixa TOTAL`, `50%:Caixa/Plantao:50%`, `Plantao TOTAL`.
+- `Plantonista(s)`: caixa de selecao multipla. Quando `Credor` for `Caixa TOTAL`, o campo fica desativado.
 - `Observacoes`, opcional.
 
 Antes do envio, o app mostra uma confirmacao para conferencia dos dados.
 
-## Resumo e PDF
-
-O app carrega o resumo da data selecionada. Entradas com `Particular` ou `Complementação` aparecem em vermelho no resumo e no PDF.
-
-O botao `Relatorio PDF` gera um arquivo diario em tabela.
-
-O botao `PDF mensal no WhatsApp` gera um relatorio mensal em tabela, com selecao de mes. Em celulares compativeis, o app abre o compartilhamento do PDF para envio pelo WhatsApp. Quando o navegador nao permite compartilhar arquivo diretamente, o PDF e baixado e o WhatsApp abre com a mensagem do relatorio.
-
 ## Planilha Google
 
-A planilha de destino ja foi criada:
+Planilha de destino:
 
-- Nome: `Registros de Etiquetas`
-- Link: https://docs.google.com/spreadsheets/d/1AUB4-Yl9lpS3TCgEBYMUwVDDuYQvj8suApPAJxifb8U/edit
-- Pasta: https://drive.google.com/drive/u/0/folders/11rAa1MjAgUJBBOod7MBMFi84tJt9grk8
-
-As abas `Registros` e `Listas` foram preparadas para receber o app.
+- Link: https://docs.google.com/spreadsheets/d/1uvnn00jJOiE2KweCQ6IEFm8xN4kuuBIBs6VVYorkOtY/edit
 
 O Apps Script em `apps-script/Code.gs` cria e ajusta automaticamente:
 
@@ -49,35 +43,30 @@ O Apps Script em `apps-script/Code.gs` cria e ajusta automaticamente:
 - aba `Listas`
 - cabecalhos
 - listas de validacao para `Tipo` e `Credor`
+- endpoint de leitura com IA
 - endpoint de envio
-- endpoint de resumo por data
+- endpoint de resumo por data e por mes
 
-Cabecalho da aba `Registros`:
-
-```text
-Data | Nome do Paciente | Registro | Tipo | Credor | Plantonista(s) | Observações | Criado em
-```
-
-## Como ativar o envio real
-
-O Web App do Apps Script ja esta implantado em:
+Cabecalho esperado da aba `Registros`:
 
 ```text
-https://script.google.com/macros/s/AKfycbzWwukthNK5OP2itdkJ9tNR-4TZg5IfoORA8q1ke0KpLkCkKklZQJyxEpiEH0mjY0gn0w/exec
+Data | Nome do Paciente | Cirurgia | Atendimento | Tipo | Credor | Plantonista(s) | Observacoes | Criado em
 ```
 
-Essa URL ja esta configurada como padrao no PWA.
+## Como ativar a IA
 
-1. Abra a planilha `Registros de Etiquetas`.
+1. Abra a planilha nova.
 2. Va em `Extensoes > Apps Script`.
 3. Cole o conteudo de `apps-script/Code.gs`.
-4. Salve.
-5. Va em `Implantar > Nova implantacao`.
-6. Escolha `Aplicativo da Web`.
-7. Em `Executar como`, use `Voce`.
-8. Em acesso, escolha uma opcao que permita o uso do app.
-9. Copie a URL final `/exec`.
-10. Se for uma nova implantacao, no PWA cole essa nova URL no campo `URL do Google Apps Script Web App` e salve.
+4. Em `Configuracoes do projeto > Propriedades do script`, crie a propriedade `OPENAI_API_KEY` com sua chave da OpenAI API.
+5. Salve.
+6. Execute a funcao `setup` uma vez para preparar as abas e autorizar o script.
+7. Va em `Implantar > Nova implantacao`.
+8. Escolha `Aplicativo da Web`.
+9. Em `Executar como`, use `Voce`.
+10. Em acesso, escolha uma opcao que permita o uso do app.
+11. Copie a URL final `/exec`.
+12. No PWA, cole essa URL em `URL do Google Apps Script Web App` e salve.
 
 ## Publicacao no GitHub Pages
 

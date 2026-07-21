@@ -1,25 +1,33 @@
 const SPREADSHEET_NAME = "Registros de Etiquetas";
-const SPREADSHEET_ID = "1AUB4-Yl9lpS3TCgEBYMUwVDDuYQvj8suApPAJxifb8U";
+const SPREADSHEET_ID = "1uvnn00jJOiE2KweCQ6IEFm8xN4kuuBIBs6VVYorkOtY";
 const REGISTROS_SHEET = "Registros";
 const LISTAS_SHEET = "Listas";
+const OPENAI_MODEL = "gpt-5.6";
+const OPENAI_API_KEY_PROPERTY = "OPENAI_API_KEY";
+
 const REGISTROS_HEADERS = [
   "Data",
   "Nome do Paciente",
-  "Registro",
+  "Cirurgia",
+  "Atendimento",
   "Tipo",
   "Credor",
   "Plantonista(s)",
-  "Observações",
+  "Observacoes",
   "Criado em",
 ];
 
-const TIPO_OPTIONS = ["Particular", "Complementação", "Unimed", "Outros"];
-const CREDOR_OPTIONS = ["Caixa TOTAL", "50%:Caixa/Plantão:50%", "Plantão TOTAL"];
+const TIPO_OPTIONS = ["Particular", "Complementacao", "Unimed", "Outros"];
+const CREDOR_OPTIONS = ["Caixa TOTAL", "50%:Caixa/Plantao:50%", "Plantao TOTAL"];
 const PLANTONISTA_OPTIONS = [
-  "AD", "AA", "AL", "BA", "CH", "CR", "DE", "DN", "FL", "FR", "GU", "GB", "IG", "JÁ",
+  "AD", "AA", "AL", "BA", "CH", "CR", "DE", "DN", "FL", "FR", "GU", "GB", "IG", "JA",
   "L2", "LE", "LD", "LC", "LH", "LU", "LA", "LO", "MA", "MH", "PR", "RA", "RL", "RC",
   "RO", "RU", "WE",
 ];
+
+function setup() {
+  return ensureWorkbook_();
+}
 
 function doGet(e) {
   try {
@@ -73,13 +81,19 @@ function doPost(e) {
   try {
     ensureWorkbook_();
     const payload = JSON.parse((e.postData && e.postData.contents) || "{}");
+
+    if (payload.action === "aiExtract") {
+      return handleAiExtract_(payload);
+    }
+
     validatePayload_(payload);
 
     const sheet = getSpreadsheet_().getSheetByName(REGISTROS_SHEET);
     sheet.appendRow([
       payload.data || "",
       payload.nomePaciente || "",
-      payload.registro || "",
+      payload.cirurgia || "",
+      payload.atendimento || "",
       payload.tipo || "",
       payload.credor || "",
       payload.plantonistas || "",
@@ -100,12 +114,113 @@ function doPost(e) {
   }
 }
 
-function ensureWorkbook_() {
-  const spreadsheet = getSpreadsheet_();
-  if (spreadsheet.getName() !== SPREADSHEET_NAME) {
-    // O script tambem funciona em uma planilha com outro nome, mas informa o alvo correto ao app.
+function handleAiExtract_(payload) {
+  const imageDataUrl = String(payload.imageDataUrl || "").trim();
+  if (!/^data:image\/(png|jpe?g|webp);base64,/i.test(imageDataUrl)) {
+    throw new Error("Imagem invalida para leitura com IA.");
   }
 
+  const apiKey = PropertiesService.getScriptProperties().getProperty(OPENAI_API_KEY_PROPERTY);
+  if (!apiKey) {
+    throw new Error("Configure a propriedade OPENAI_API_KEY no Apps Script.");
+  }
+
+  const prompt = [
+    "Voce le etiquetas hospitalares HMT.",
+    "Extraia somente os campos abaixo e responda em JSON.",
+    "Regras:",
+    "1. nomePaciente: texto depois de 'Nome:' e antes de 'Pront:'. Exemplo: 'Celio Cardoso'. Nao inclua Pront nem o numero do prontuario.",
+    "2. cirurgia: numero impresso abaixo do primeiro codigo de barras, na parte inferior esquerda, proximo de 'N.Cirur'. Deve conter somente digitos.",
+    "3. atendimento: numero impresso abaixo do segundo codigo de barras, na parte inferior direita, proximo de 'N.Atend'. Deve conter somente digitos.",
+    "Se houver duvida, use string vazia no campo duvidoso. Nao invente valores.",
+  ].join("\n");
+
+  const requestBody = {
+    model: OPENAI_MODEL,
+    input: [
+      {
+        role: "user",
+        content: [
+          { type: "input_text", text: prompt },
+          { type: "input_image", image_url: imageDataUrl, detail: "high" },
+        ],
+      },
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "etiqueta_hmt",
+        strict: true,
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: ["nomePaciente", "cirurgia", "atendimento"],
+          properties: {
+            nomePaciente: { type: "string" },
+            cirurgia: { type: "string" },
+            atendimento: { type: "string" },
+          },
+        },
+      },
+    },
+  };
+
+  const response = UrlFetchApp.fetch("https://api.openai.com/v1/responses", {
+    method: "post",
+    contentType: "application/json",
+    headers: {
+      Authorization: "Bearer " + apiKey,
+    },
+    payload: JSON.stringify(requestBody),
+    muteHttpExceptions: true,
+  });
+
+  const status = response.getResponseCode();
+  const content = response.getContentText();
+  if (status < 200 || status >= 300) {
+    throw new Error("Falha na IA (" + status + "): " + content.slice(0, 300));
+  }
+
+  const apiResult = JSON.parse(content);
+  const outputText = extractOutputText_(apiResult);
+  if (!outputText) {
+    throw new Error("A IA nao retornou texto estruturado.");
+  }
+
+  const extracted = JSON.parse(outputText);
+  const nomePaciente = cleanName_(extracted.nomePaciente);
+  const cirurgia = cleanDigits_(extracted.cirurgia);
+  const atendimento = cleanDigits_(extracted.atendimento);
+
+  return jsonResponse({
+    ok: true,
+    nomePaciente,
+    cirurgia,
+    atendimento,
+  });
+}
+
+function extractOutputText_(apiResult) {
+  if (apiResult.output_text) {
+    return apiResult.output_text;
+  }
+
+  const output = apiResult.output || [];
+  for (let i = 0; i < output.length; i += 1) {
+    const item = output[i];
+    const content = item.content || [];
+    for (let j = 0; j < content.length; j += 1) {
+      if (content[j].type === "output_text" && content[j].text) {
+        return content[j].text;
+      }
+    }
+  }
+
+  return "";
+}
+
+function ensureWorkbook_() {
+  const spreadsheet = getSpreadsheet_();
   const registros = spreadsheet.getSheetByName(REGISTROS_SHEET) || spreadsheet.insertSheet(REGISTROS_SHEET);
   const listas = spreadsheet.getSheetByName(LISTAS_SHEET) || spreadsheet.insertSheet(LISTAS_SHEET);
 
@@ -149,8 +264,8 @@ function applyValidations_(registros, listas) {
     .setAllowInvalid(false)
     .build();
 
-  registros.getRange(2, 4, lastRow - 1, 1).setDataValidation(tipoRule);
-  registros.getRange(2, 5, lastRow - 1, 1).setDataValidation(credorRule);
+  registros.getRange(2, 5, lastRow - 1, 1).setDataValidation(tipoRule);
+  registros.getRange(2, 6, lastRow - 1, 1).setDataValidation(credorRule);
 }
 
 function formatRegistros_(sheet) {
@@ -163,13 +278,12 @@ function formatRegistros_(sheet) {
 }
 
 function validatePayload_(payload) {
-  const required = ["data", "nomePaciente", "registro", "tipo", "credor"];
+  const required = ["data", "nomePaciente", "cirurgia", "atendimento", "tipo", "credor"];
   if (payload.credor !== "Caixa TOTAL") {
     required.push("plantonistas");
   }
 
   const missing = required.filter((key) => !String(payload[key] || "").trim());
-
   if (missing.length) {
     throw new Error("Campos obrigatorios ausentes: " + missing.join(", "));
   }
@@ -189,16 +303,7 @@ function getEntriesByDate_(date) {
   const values = sheet.getRange(2, 1, lastRow - 1, REGISTROS_HEADERS.length).getDisplayValues();
   return values
     .filter((row) => normalizeDate_(row[0]) === date)
-    .map((row) => ({
-      data: normalizeDate_(row[0]),
-      nomePaciente: row[1],
-      registro: row[2],
-      tipo: row[3],
-      credor: row[4],
-      plantonistas: row[5],
-      observacoes: row[6],
-      criadoEm: row[7],
-    }));
+    .map(rowToEntry_);
 }
 
 function getEntriesByMonth_(month) {
@@ -215,24 +320,25 @@ function getEntriesByMonth_(month) {
   const values = sheet.getRange(2, 1, lastRow - 1, REGISTROS_HEADERS.length).getDisplayValues();
   return values
     .filter((row) => normalizeDate_(row[0]).slice(0, 7) === month)
-    .map((row) => ({
-      data: normalizeDate_(row[0]),
-      nomePaciente: row[1],
-      registro: row[2],
-      tipo: row[3],
-      credor: row[4],
-      plantonistas: row[5],
-      observacoes: row[6],
-      criadoEm: row[7],
-    }));
+    .map(rowToEntry_);
+}
+
+function rowToEntry_(row) {
+  return {
+    data: normalizeDate_(row[0]),
+    nomePaciente: row[1],
+    cirurgia: row[2],
+    atendimento: row[3],
+    tipo: row[4],
+    credor: row[5],
+    plantonistas: row[6],
+    observacoes: row[7],
+    criadoEm: row[8],
+  };
 }
 
 function getSpreadsheet_() {
-  if (SPREADSHEET_ID) {
-    return SpreadsheetApp.openById(SPREADSHEET_ID);
-  }
-
-  return SpreadsheetApp.getActiveSpreadsheet();
+  return SpreadsheetApp.openById(SPREADSHEET_ID);
 }
 
 function normalizeDate_(value) {
@@ -248,6 +354,17 @@ function normalizeDate_(value) {
   }
 
   return text;
+}
+
+function cleanDigits_(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function cleanName_(value) {
+  return String(value || "")
+    .replace(/\bPront\s*:.*$/i, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function jsonResponse(data) {

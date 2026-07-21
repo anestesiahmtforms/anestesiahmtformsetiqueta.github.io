@@ -46,6 +46,13 @@ const fields = {
   observacoes: document.querySelector("#observacoes"),
 };
 
+const plantonistasUi = {
+  wrapper: null,
+  button: null,
+  panel: null,
+  checks: [],
+};
+
 document.querySelector("#start-camera").addEventListener("click", startCamera);
 document.querySelector("#capture-image").addEventListener("click", captureFromCamera);
 document.querySelector("#upload-image").addEventListener("change", handleFileUpload);
@@ -58,6 +65,7 @@ document.querySelector("#generate-pdf").addEventListener("click", generatePdfRep
 document.querySelector("#generate-month-pdf-whatsapp").addEventListener("click", generateMonthlyPdfForWhatsApp);
 summaryDateEl.addEventListener("change", loadSummary);
 fields.credor.addEventListener("change", syncPlantonistasRequirement);
+document.addEventListener("click", closePlantonistasPickerOnOutsideClick);
 
 bootstrap();
 
@@ -67,6 +75,7 @@ async function bootstrap() {
   summaryDateEl.value = today;
   reportMonthEl.value = today.slice(0, 7);
   scriptUrlEl.value = state.config.scriptUrl;
+  setupPlantonistasPicker();
   syncPlantonistasRequirement();
   renderSheetStatus();
   await loadMetadata();
@@ -570,7 +579,7 @@ function collectFormData() {
     registro: fields.registro.value.trim(),
     tipo: fields.tipo.value.trim(),
     credor: fields.credor.value.trim(),
-    plantonistas: isCaixaTotal ? "" : fields.plantonistas.value.trim(),
+    plantonistas: isCaixaTotal ? "" : getSelectedPlantonistasValue(),
     observacoes: fields.observacoes.value.trim(),
     userAgent: navigator.userAgent,
   };
@@ -903,6 +912,7 @@ function resetForm(options = {}) {
   const selectedDate = options.keepDate || fields.data.value || getTodayISO();
   formEl.reset();
   fields.data.value = options.keepDate ? selectedDate : getTodayISO();
+  clearPlantonistasSelection();
   syncPlantonistasRequirement();
 
   if (!options.keepImage) {
@@ -951,9 +961,123 @@ function syncPlantonistasRequirement() {
   fields.plantonistas.disabled = isCaixaTotal;
   fields.plantonistas.required = !isCaixaTotal;
 
-  if (isCaixaTotal) {
-    fields.plantonistas.value = "";
+  if (plantonistasUi.button) {
+    plantonistasUi.button.disabled = isCaixaTotal;
   }
+
+  plantonistasUi.checks.forEach((checkbox) => {
+    checkbox.disabled = isCaixaTotal;
+  });
+
+  if (isCaixaTotal) {
+    clearPlantonistasSelection();
+    closePlantonistasPicker();
+  }
+}
+
+function setupPlantonistasPicker() {
+  if (plantonistasUi.wrapper) {
+    return;
+  }
+
+  const options = Array.from(fields.plantonistas.options).filter((option) => option.value);
+  fields.plantonistas.classList.add("native-multi-hidden");
+
+  const wrapper = document.createElement("div");
+  wrapper.id = "plantonistas-picker";
+  wrapper.className = "multi-select";
+
+  const button = document.createElement("button");
+  button.id = "plantonistas-toggle";
+  button.type = "button";
+  button.className = "multi-select-toggle";
+  button.setAttribute("aria-expanded", "false");
+  button.textContent = "Selecione uma ou mais siglas";
+
+  const panel = document.createElement("div");
+  panel.id = "plantonistas-options";
+  panel.className = "multi-select-options";
+  panel.hidden = true;
+
+  const checks = options.map((option) => {
+    const label = document.createElement("label");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = option.value;
+    checkbox.addEventListener("change", syncPlantonistasFromCheckboxes);
+    label.append(checkbox, document.createTextNode(` ${option.textContent.trim()}`));
+    panel.append(label);
+    return checkbox;
+  });
+
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (button.disabled) {
+      return;
+    }
+    const isOpen = !panel.hidden;
+    panel.hidden = isOpen;
+    button.setAttribute("aria-expanded", String(!isOpen));
+  });
+
+  panel.addEventListener("click", (event) => event.stopPropagation());
+  wrapper.append(button, panel);
+  fields.plantonistas.insertAdjacentElement("afterend", wrapper);
+
+  plantonistasUi.wrapper = wrapper;
+  plantonistasUi.button = button;
+  plantonistasUi.panel = panel;
+  plantonistasUi.checks = checks;
+  syncPlantonistasFromCheckboxes();
+}
+
+function syncPlantonistasFromCheckboxes() {
+  const selected = plantonistasUi.checks
+    .filter((checkbox) => checkbox.checked)
+    .map((checkbox) => checkbox.value);
+
+  Array.from(fields.plantonistas.options).forEach((option) => {
+    option.selected = selected.includes(option.value);
+  });
+
+  if (plantonistasUi.button) {
+    plantonistasUi.button.textContent = selected.length ? selected.join(", ") : "Selecione uma ou mais siglas";
+    plantonistasUi.button.classList.toggle("has-selection", selected.length > 0);
+  }
+}
+
+function getSelectedPlantonistasValue() {
+  return Array.from(fields.plantonistas.selectedOptions)
+    .map((option) => option.value.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+function clearPlantonistasSelection() {
+  plantonistasUi.checks.forEach((checkbox) => {
+    checkbox.checked = false;
+  });
+  Array.from(fields.plantonistas.options).forEach((option) => {
+    option.selected = false;
+  });
+  syncPlantonistasFromCheckboxes();
+}
+
+function closePlantonistasPicker() {
+  if (!plantonistasUi.panel) {
+    return;
+  }
+
+  plantonistasUi.panel.hidden = true;
+  plantonistasUi.button?.setAttribute("aria-expanded", "false");
+}
+
+function closePlantonistasPickerOnOutsideClick(event) {
+  if (!plantonistasUi.wrapper || plantonistasUi.wrapper.contains(event.target)) {
+    return;
+  }
+
+  closePlantonistasPicker();
 }
 
 function getTodayISO() {

@@ -20,7 +20,7 @@ O campo `Convenio` foi removido do app.
 - `Registro`, preenchido pelo scanner e editavel.
 - `Tipo`: `Particular`, `Complementação`, `Unimed`, `Outros`.
 - `Credor`: `Caixa TOTAL`, `50%:Caixa/Plantão:50%`, `Plantão TOTAL`.
-- `Plantonista(s)`: lista suspensa com as siglas definidas. Quando `Credor` for `Caixa TOTAL`, o campo fica desativado porque nao e necessario.
+- `Plantonista(s)`: caixa de selecao multipla com as siglas definidas. Ao tocar, abre a lista e permite marcar quantas siglas forem necessarias. Quando `Credor` for `Caixa TOTAL`, o campo fica desativado porque nao e necessario.
 - `Observacoes`, opcional.
 
 Antes do envio, o app mostra uma confirmacao para conferencia dos dados.
